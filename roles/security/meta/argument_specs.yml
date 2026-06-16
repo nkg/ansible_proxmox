@@ -99,3 +99,7 @@ argument_specs:
         type: list
         elements: str
         description: Package list override for konstruktoid (Trixie-safe, Proxmox-friendly).
+      security_packages_blocklist:
+        type: list
+        elements: str
+        description: Packages konstruktoid removes, with Proxmox-critical ones (rsync/rpcbind/git) excluded.

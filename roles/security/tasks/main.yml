@@ -35,6 +35,7 @@
     sshd_host_keys_files: "{{ security_sshd_host_keys_files }}"
     pwquality: "{{ security_pwquality }}"
     packages_debian: "{{ security_packages_debian }}"
+    packages_blocklist: "{{ security_packages_blocklist }}"
   when: security_apply_hardening | bool
   tags: [security, hardening]
 

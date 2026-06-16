@@ -5,6 +5,7 @@ releases:
     release_date: "2026-06-16"
     changes:
       bugfixes:
+        - security — exclude rsync/rpcbind/git from konstruktoid's packages_blocklist; proxmox-ve depends on rsync and rpcbind, so removing them cascades into uninstalling Proxmox.
         - requirements/galaxy — declare community.crypto (a konstruktoid.hardening dependency Ansible resolves at parse time), so the security role works on a fresh install.
         - repos — disable the stock enterprise pve/ceph repos before any apt call, so a no-subscription host's 401 no longer breaks apt update.
         - host_config — put /usr/sbin on PATH for the apparmor_parser unload so it resolves under a non-login su.

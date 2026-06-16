@@ -76,6 +76,36 @@ security_pwquality:
   usercheck: true
   usersubstr: 3
 
+# --- Package blocklist konstruktoid removes — with the Proxmox-critical
+# packages taken OUT. proxmox-ve depends on rsync and rpcbind, so removing them
+# cascades into uninstalling Proxmox (the pve-apt-hook blocks it and the run
+# fails); git is removed too but host_base installs it. Everything else here is
+# legacy/insecure and safe to remove. ---
+security_packages_blocklist:
+  - apport
+  - autofs
+  - avahi
+  - beep
+  - ftp
+  - inetutils-telnet
+  - pastebinit
+  - popularity-contest
+  - prelink
+  - rsh
+  - rsh-server
+  - talk
+  - telnet
+  - telnet-server
+  - tftp
+  - tftpd
+  - tnftp
+  - tuned
+  - vsftpd
+  - whoopsie
+  - xinetd
+  - yp-tools
+  - ypbind
+
 # --- Trixie-safe package list (upstream defaults pin Bookworm versions that
 # conflict on Trixie, and pull in auditd/postfix not wanted on Proxmox) ---
 security_packages_debian:
