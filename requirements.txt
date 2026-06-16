@@ -1,7 +1,7 @@
 # Python tooling for CI (lint + molecule). Pinned loosely; dependabot bumps.
 ansible-core>=2.21.0
-ansible-lint>=24.0
+ansible-lint>=26.4.0
 molecule>=24.0
-molecule-plugins[docker]>=23.5
+molecule-plugins[docker]>=25.8.12
 yamllint>=1.35
-jmespath>=1.0
+jmespath>=1.1.0
