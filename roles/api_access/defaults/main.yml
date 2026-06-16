@@ -59,11 +59,16 @@ api_access_role_privileges:
   - VM.Snapshot
   - VM.Snapshot.Rollback
 
-# SSH public key authorized for the IaC admin user (empty = skip).
+# SSH public key authorized for the IaC admin user. Either pass the key text
+# (api_access_admin_ssh_key) or, more robustly, a path to a .pub file on the
+# controller (api_access_admin_ssh_key_file) which Ansible reads directly —
+# avoiding shell `$(cat ...)` substitution quirks. The _file form wins if set.
 api_access_admin_ssh_key: ""
+api_access_admin_ssh_key_file: ""
 
-# SSH public key authorized for root (empty = skip).
+# SSH public key authorized for root (key text or controller-side .pub path).
 api_access_root_ssh_key: ""
+api_access_root_ssh_key_file: ""
 
 # Storage pools whose content types should be configured, as a dict of
 # {pool_name: "content,types,csv"}. Empty (the default) skips the storage step.

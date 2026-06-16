@@ -8,11 +8,13 @@ name: Molecule
 
 jobs:
   molecule:
-    # api_access, security and hetzner_image need a real Proxmox host / QEMU /
-    # the konstruktoid role applied, so they are tested out of band.
+    # api_access runs its container-testable 'bootstrap' scenario (the Linux IaC
+    # user); its Proxmox-API half, plus security and hetzner_image, need a real
+    # Proxmox host / QEMU / konstruktoid and are tested out of band.
     uses: nkg/github-actions/.github/workflows/molecule.yml@v2
     with:
       roles: |
+        api_access
         crowdsec
         host_base
         host_config

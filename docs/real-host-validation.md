@@ -1,142 +1,102 @@
 # Real-host validation runbook
 
-The molecule tests only exercise config-level behaviour in containers. Before
-trusting this collection, validate the **safe config roles** against a real
-Proxmox node. This runbook uses a staged, check-mode-first approach.
+The molecule tests only exercise config-level behaviour in containers. This
+runbook validates the roles against a real Proxmox node, in the order that
+actually works: **bootstrap the IaC user first, then run everything as it.**
 
 > **Do NOT** run `nkg.proxmox.bootstrap_hetzner` / the `hetzner_image` role
-> against any host you care about — it **wipes disks**. It is out of scope here.
+> against a host you care about — it **wipes disks**. Out of scope here.
 
-## 1. Pick a node
+## 0. Prerequisites
 
-Use a **non-critical, rebuildable** Proxmox node first. From the
-`homeservers/platform` inventory the `proxmox` group is `vaterland`, `pvebu`,
-`pvemini`, `linc` (`ansible_user: root`). Prefer a spare/test box, and take a
-backup or snapshot of it before Stage 4.
+- A **non-critical, rebuildable** Proxmox node, and a **console/KVM session**
+  open (the security stage changes sshd/PAM).
+- The collection + konstruktoid role installed (or a local checkout symlinked
+  into `~/.ansible/collections/ansible_collections/nkg/proxmox` for dev):
+  ```bash
+  ansible-galaxy collection install git+https://github.com/nkg/ansible_proxmox.git,v1 --force
+  ansible-galaxy role install -r <(curl -fsSL https://raw.githubusercontent.com/nkg/ansible_proxmox/main/requirements.yml)
+  ```
+- An inventory with a `proxmox` group. If root SSH login is disabled, you bootstrap
+  via an existing unprivileged login (`ng` below) escalating with `su`.
 
-Keep a **second root session / console (KVM/IPMI)** open throughout — Stage 4
-(hardening) changes sshd and PAM, and you want a fallback if you lock yourself
-out.
+## 1. Bootstrap the IaC user (FIRST)
 
-## 2. Install the collection + its role dependency
-
-```bash
-ansible-galaxy collection install git+https://github.com/nkg/ansible_proxmox.git
-ansible-galaxy role install -r \
-  <(curl -fsSL https://raw.githubusercontent.com/nkg/ansible_proxmox/main/requirements.yml)
-```
-
-Or, from `homeservers/platform`, add to `ansible/requirements.yml`:
-
-```yaml
-collections:
-  - name: https://github.com/nkg/ansible_proxmox.git
-    type: git
-    version: v1
-roles:
-  - src: https://github.com/konstruktoid/ansible-role-hardening/archive/refs/tags/v4.6.0.tar.gz
-    name: konstruktoid.hardening
-```
-
-then `ansible-galaxy install -r ansible/requirements.yml`.
-
-## 3. What runs by default
-
-Environment-specific behaviour is **off** by default, so a plain run is safe:
-
-| Role | Default behaviour | Off by default |
-|------|-------------------|----------------|
-| `repos` | enables pve-no-subscription, installs signing key, removes nag | enterprise, ceph |
-| `host_base` | hostname/timezone/packages/sysctl/limits | — |
-| `host_config` | disables single-node HA only | networking, CPU/SMT, storage, ACME |
-| `crowdsec` | installs engine + firewall bouncer | console enrollment |
-| `security` | applies konstruktoid with Proxmox-safe overrides | — |
-
-## 4. Staged run
-
-All commands assume you're in a tree whose `ansible.cfg` points at your
-inventory (e.g. `homeservers/platform/ansible`). Replace `<node>`.
-
-### Stage 0 — check mode (no changes)
+This creates the `iac` Linux user (passwordless sudo + your SSH key) **and** the
+Proxmox API user/role/token. Connect as your existing login and escalate via
+`su` (root's password at the `BECOME` prompt). Pass your public key by **file
+path** (not `$(cat …)` — shell substitution can mangle it):
 
 ```bash
-ansible-playbook nkg.proxmox.site -l <node> --check --diff
+ansible-playbook nkg.proxmox.api_access -l <node> \
+  -e ansible_user=ng -e ansible_become_method=su -K \
+  -e api_access_admin_ssh_key_file=/absolute/path/to/your_key.pub
 ```
 
-Some `apt`/`command` tasks can't predict in check mode — a few yellow
-"skipped"/"changed" lines are expected; you're looking for unexpected
-**failures**, not a perfectly clean diff.
+The playbook puts `/usr/sbin` on PATH for every task, so the Proxmox CLI
+(`pveum`/`pvesh`) resolves even under a non-login `su`. If you only want the
+Linux user (not the API token yet), add `--tags bootstrap`.
 
-### Stage 1 — repos + host_base (lowest risk)
+Confirm it worked: `ssh iac@<node-ip> true` should succeed by key.
+
+## 2. Everything else runs as `iac`
+
+`iac` has key auth + passwordless sudo, so `sudo`'s `secure_path` includes
+`/sbin` — no more `su`/PATH issues. Drop `-K`, `su`, and `become_flags`:
 
 ```bash
-ansible-playbook nkg.proxmox.site -l <node> --tags repos,host_base
+ansible-playbook nkg.proxmox.site -l <node> -e ansible_user=iac \
+  -e host_base_system_upgrade=false --tags repos,host_base,host_config
 ```
+
+`-e ansible_user=iac` is required if your inventory hardcodes `ansible_user:
+root` (inventory vars outrank `-u`; only `-e` wins).
 
 Verify on the node:
-
 ```bash
+apt update                               # succeeds (enterprise repo disabled)
 cat /etc/apt/sources.list.d/pve-no-subscription.sources
-ls -l /etc/apt/keyrings/proxmox-release-*.gpg
-apt update            # should succeed with the new deb822 source
-timedatectl ; sysctl net.ipv4.ip_forward
+systemctl is-enabled pve-ha-lrm          # disabled
+timedatectl
 ```
 
-### Stage 2 — host_config (just HA disable by default)
+## 3. Security (konstruktoid) — on a snapshot
+
+The heavy stage: module blacklists, GRUB cmdline, sysctl, PAM, sshd. **Snapshot
+first.**
 
 ```bash
-ansible-playbook nkg.proxmox.site -l <node> --tags host_config
-systemctl is-enabled pve-ha-lrm pve-ha-crm   # expect: disabled
+ansible-playbook nkg.proxmox.site -l <node> -e ansible_user=iac --tags security
 ```
 
-### Stage 3 — crowdsec
+Then, **before closing your session**, in a NEW shell confirm SSH still works,
+and that an unprivileged LXC still starts (`pct start <ctid>`) — that proves the
+user-namespace sysctl override held.
+
+## 4. Idempotence check (the real proof)
 
 ```bash
-ansible-playbook nkg.proxmox.site -l <node> --tags crowdsec
-cscli metrics ; cscli decisions list
-systemctl status crowdsec crowdsec-firewall-bouncer --no-pager
+ansible-playbook nkg.proxmox.site -l <node> -e ansible_user=iac -e host_base_system_upgrade=false
 ```
+Expect `changed=0` on the recap. Any `changed` on a steady-state re-run is a bug.
 
-### Stage 4 — security (konstruktoid) — RISKIEST, do last
+## Real-world findings (and how the collection handles them)
 
-```bash
-ansible-playbook nkg.proxmox.site -l <node> --tags security,hardening
-```
+Things that surfaced validating against real Proxmox 9 (Trixie) nodes:
 
-Then, **before closing your current session**, open a NEW ssh session to
-confirm you can still log in, and check:
+| Symptom | Cause | Handled by |
+|---------|-------|-----------|
+| `apt update` 401 on `enterprise.proxmox.com` | stock enterprise/ceph repos enabled, no subscription | `repos` disables the stock `pve-enterprise`/`ceph` `.sources` first (file module, before any apt) |
+| `apparmor_parser` / `pveum`: `No such file or directory` | `/usr/sbin` not on PATH under non-login `su` | play-level `environment: PATH` (incl. `/usr/sbin`) in `site.yml`/`api_access.yml`; or run as `iac` (sudo `secure_path`) |
+| `Configure RuleFile … usbguard-daemon.conf does not exist` | konstruktoid USBGuard on a hypervisor (and `--check` can't install it) | `security_manage_usbguard: false` by default |
+| unprivileged LXC won't start after hardening | konstruktoid sets `user.max_user_namespaces=0` | `security_sysctl_overrides` re-asserts userns after hardening |
+| `authorized_key: list index out of range` | mangled/empty key string (fish `$(cat …)`) | pass `api_access_admin_ssh_key_file=<path>`; role reads + trims it |
+| `community.general.yaml … deprecated` / `AnsibleDumper` callback error | deprecated yaml stdout callback | set `stdout_callback = default` + `callback_result_format = yaml` in your `ansible.cfg` |
 
-```bash
-sshd -T | grep -Ei 'permitrootlogin|passwordauthentication'
-aa-status | head
-```
+## Connection / become notes
 
-The role keeps root PAM login, disables UFW, and preserves SSH host keys
-(Proxmox-safe overrides), but verify anyway.
-
-## 5. Idempotence check (the real proof)
-
-Re-run the full play and confirm the second pass reports **no changes**:
-
-```bash
-ansible-playbook nkg.proxmox.site -l <node>
-# look for: changed=0 on the recap
-```
-
-Any task reporting `changed` on a steady-state re-run is a bug worth filing.
-
-## 6. Rollback notes
-
-- `host_config` backs up `/etc/network/interfaces` before rewriting it — but
-  networking is **off by default**, so nothing is touched unless you enable
-  `host_config_manage_networking`.
-- `repos`: set `repos_no_subscription: false` to remove the `.sources` file.
-- `security` (konstruktoid) makes broad changes — a node snapshot/backup before
-  Stage 4 is the cleanest rollback.
-
-## 7. Optional / advanced
-
-- **ACME web-UI cert** (`host_config_acme_enabled: true`) needs a Cloudflare
-  DNS-01 token (`host_config_acme_cf_token`) and `host_config_acme_email`.
-- **`api_access`** (IaC user + API token) is a separate concern — run it on its
-  own once the base validation passes; it needs `api_access_user` and SSH keys.
+- **Inventory `ansible_user` outranks `-u`** — override with `-e ansible_user=…`.
+- **`su` (non-login)** gives a PATH without `/sbin`. Use `iac` + sudo (preferred),
+  or `-e ansible_become_flags='-'` for a login shell.
+- The IaC user that `api_access` creates gets passwordless sudo, so after step 1
+  you never need `su`/`-K` again.

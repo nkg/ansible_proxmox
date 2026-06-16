@@ -1,0 +1,14 @@
+---
+# Exercises only the bootstrap (Linux IaC user) — the Proxmox API tasks need a
+# real PVE host, so they're out of scope for the container scenario.
+- name: Converge
+  hosts: all
+  become: true
+  tasks:
+    - name: Run the api_access bootstrap
+      ansible.builtin.include_role:
+        name: api_access
+        tasks_from: bootstrap
+      vars:
+        api_access_user: iac
+        api_access_admin_ssh_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGI456mPpsKWJ0NsSNnH30ECB7Wpg3qXfcFgCbYZ9wdO molecule-bootstrap-test"
