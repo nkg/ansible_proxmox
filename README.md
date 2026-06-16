@@ -105,6 +105,9 @@ uvx --with ansible-core --with 'molecule-plugins[docker]' molecule test
 `api_access`, `security` and `hetzner_image` require a real Proxmox host / QEMU
 and are tested out of band.
 
+To validate the config roles against a real node before trusting them, follow
+the staged, check-mode-first [real-host validation runbook](docs/real-host-validation.md).
+
 ## License
 
 GPL-2.0-or-later. See [LICENSE](LICENSE).

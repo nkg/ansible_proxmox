@@ -9,14 +9,22 @@
 - name: Configure and harden Proxmox VE
   hosts: proxmox
   become: true
+  # Role-level tags propagate to every task in the role, so you can stage a
+  # validation run with e.g. --tags repos,host_base (see
+  # docs/real-host-validation.md).
   roles:
-    - nkg.proxmox.repos
-    - nkg.proxmox.host_base
+    - role: nkg.proxmox.repos
+      tags: repos
+    - role: nkg.proxmox.host_base
+      tags: host_base
     - role: nkg.proxmox.host_config
+      tags: host_config
       vars:
         # Companion fixes for the konstruktoid hardening applied below:
         # restore the lxc-* AppArmor stubs and /tmp exec it would otherwise break.
         host_config_lxc_apparmor_fix: true
         host_config_tmp_exec_override: true
-    - nkg.proxmox.security
-    - nkg.proxmox.crowdsec
+    - role: nkg.proxmox.security
+      tags: security
+    - role: nkg.proxmox.crowdsec
+      tags: crowdsec
