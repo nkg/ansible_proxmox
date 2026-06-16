@@ -8,23 +8,18 @@
         gather_subset:
           - min
 
-    - name: Check the timezone was set
-      ansible.builtin.stat:
-        path: /etc/localtime
-      register: host_base_verify_localtime
-
-    - name: Read configured timezone
-      ansible.builtin.command: cat /etc/timezone
+    # Check the localtime symlink target rather than /etc/timezone: the systemd
+    # timedatectl path updates the symlink but not the /etc/timezone file.
+    - name: Read the active timezone (localtime symlink target)
+      ansible.builtin.command: readlink -f /etc/localtime
       register: host_base_verify_tz
       changed_when: false
-      failed_when: false
 
     - name: Assert timezone is Europe/London
       ansible.builtin.assert:
         that:
-          - host_base_verify_localtime.stat.exists
           - "'Europe/London' in host_base_verify_tz.stdout"
-        fail_msg: "Timezone was not set to Europe/London"
+        fail_msg: "Timezone not set to Europe/London (localtime -> {{ host_base_verify_tz.stdout }})"
 
     - name: Check a managed package is installed
       ansible.builtin.command: dpkg -s git
