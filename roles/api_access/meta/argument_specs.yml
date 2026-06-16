@@ -14,11 +14,19 @@ argument_specs:
       api_access_admin_ssh_key:
         type: str
         default: ""
-        description: SSH public key authorized for the IaC admin user (empty skips).
+        description: SSH public key text authorized for the IaC admin user (empty skips).
+      api_access_admin_ssh_key_file:
+        type: str
+        default: ""
+        description: Controller-side path to a .pub file for the IaC admin user (wins over the key text).
       api_access_root_ssh_key:
         type: str
         default: ""
-        description: SSH public key authorized for root (empty skips).
+        description: SSH public key text authorized for root (empty skips).
+      api_access_root_ssh_key_file:
+        type: str
+        default: ""
+        description: Controller-side path to a .pub file for root (wins over the key text).
       api_access_storage_pools:
         type: dict
         default: {}

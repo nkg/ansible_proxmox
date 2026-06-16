@@ -9,6 +9,10 @@
 - name: Configure and harden Proxmox VE
   hosts: proxmox
   become: true
+  # Proxmox CLI + many hardening commands live in /usr/sbin, which isn't on PATH
+  # under a non-login su. Put it on PATH for every task (incl. konstruktoid).
+  environment:
+    PATH: "/usr/sbin:/sbin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
   # Role-level tags propagate to every task in the role, so you can stage a
   # validation run with e.g. --tags repos,host_base (see
   # docs/real-host-validation.md).

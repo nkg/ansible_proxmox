@@ -62,6 +62,10 @@
     # self-healing if an apparmor upgrade re-loaded a stub.
     - name: Unload any loaded LXC stub profiles from the kernel
       ansible.builtin.command: "apparmor_parser -R /etc/apparmor.d/{{ item }}"
+      # apparmor_parser lives in /usr/sbin, which isn't on PATH under a non-login
+      # `su` become — ensure sbin is searched so the binary is found.
+      environment:
+        PATH: "/usr/sbin:/sbin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
       loop: "{{ host_config_lxc_present_stubs }}"
       register: host_config_aa_unload
       failed_when: >-

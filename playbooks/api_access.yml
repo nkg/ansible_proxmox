@@ -1,0 +1,21 @@
+---
+# Create the IaC admin user (passwordless sudo + SSH key) and the Proxmox API
+# token. Two-phase usage:
+#
+#   # 1. Bootstrap ONLY the user — as your existing login, escalating via su.
+#   #    After this, the IaC user can log in by key with passwordless sudo.
+#   ansible-playbook nkg.proxmox.api_access -l <host> --tags bootstrap \
+#     -e ansible_user=ng -e ansible_become_method=su -K \
+#     -e api_access_admin_ssh_key="$(cat ~/.ssh/id_ed25519.pub)"
+#
+#   # 2. Later, the full role (API token etc.) as the IaC user:
+#   ansible-playbook nkg.proxmox.api_access -l <host> -e ansible_user=iac
+- name: Configure the Proxmox IaC user and API access
+  hosts: proxmox
+  become: true
+  # Proxmox CLI tools (pveum/pvesh/pvesm) live in /usr/sbin, which isn't on PATH
+  # under a non-login su — ensure it's searched regardless of how you connect.
+  environment:
+    PATH: "/usr/sbin:/sbin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+  roles:
+    - nkg.proxmox.api_access

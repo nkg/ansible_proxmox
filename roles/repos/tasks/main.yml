@@ -8,6 +8,31 @@
 # deb822_repository replaces the deprecated apt_repository (removed in
 # ansible-core 2.25) and does not depend on the removed apt-key/gpg tooling.
 
+# A stock Proxmox install enables the enterprise pve (and ceph) repos, which
+# return 401 without a subscription and break `apt update`. Disable them BEFORE
+# any apt call — using the file module so this needs neither apt nor
+# python3-debian. Only done when the repo is not wanted (the default), so it
+# stays idempotent when enterprise/ceph are explicitly enabled.
+- name: Disable the stock Proxmox enterprise repository
+  ansible.builtin.file:
+    path: "/etc/apt/sources.list.d/{{ item }}"
+    state: absent
+  loop:
+    - pve-enterprise.sources
+    - pve-enterprise.list
+  when: not repos_use_enterprise
+  tags: [repos, enterprise]
+
+- name: Disable the stock Proxmox Ceph enterprise repository
+  ansible.builtin.file:
+    path: "/etc/apt/sources.list.d/{{ item }}"
+    state: absent
+  loop:
+    - ceph.sources
+    - ceph.list
+  when: not repos_ceph_enabled
+  tags: [repos, ceph]
+
 - name: Install python3-debian (required by deb822_repository)
   ansible.builtin.apt:
     name: python3-debian

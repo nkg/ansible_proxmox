@@ -1,0 +1,59 @@
+---
+# Bootstrap tasks for nkg.proxmox.api_access — the Linux IaC admin user only.
+#
+# Runs as the very FIRST step (as your existing login escalating via su) to
+# create the IaC admin user with passwordless sudo and an SSH key. Every later
+# play then connects AS that user over key auth with real sudo (no su, clean
+# PATH). Imported by main.yml under the 'bootstrap' tag; run with
+# `--tags bootstrap` to do only this. No apt-update and a full-path visudo, so
+# it works before the repos role has run and under a non-login su.
+
+- name: Ensure sudo is installed
+  ansible.builtin.apt:
+    name: sudo
+    state: present
+    update_cache: false
+
+- name: Create admin group
+  ansible.builtin.group:
+    name: "{{ api_access_user }}"
+    state: present
+
+- name: Create admin user
+  ansible.builtin.user:
+    name: "{{ api_access_user }}"
+    group: "{{ api_access_user }}"
+    groups: sudo
+    append: true
+    shell: /bin/bash
+    create_home: true
+    state: present
+    password: "!"
+
+- name: Deploy IaC SSH key for admin user
+  ansible.posix.authorized_key:
+    user: "{{ api_access_user }}"
+    key: "{{ (lookup('file', api_access_admin_ssh_key_file) if api_access_admin_ssh_key_file | length > 0 else api_access_admin_ssh_key) | trim }}"
+    state: present
+  when: >-
+    api_access_admin_ssh_key_file | length > 0
+    or (api_access_admin_ssh_key | trim | length > 0)
+
+- name: Deploy SSH key for root
+  ansible.posix.authorized_key:
+    user: root
+    key: "{{ (lookup('file', api_access_root_ssh_key_file) if api_access_root_ssh_key_file | length > 0 else api_access_root_ssh_key) | trim }}"
+    state: present
+  when: >-
+    api_access_root_ssh_key_file | length > 0
+    or (api_access_root_ssh_key | trim | length > 0)
+
+- name: Grant admin user passwordless sudo
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/{{ api_access_user }}"
+    content: "{{ api_access_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    owner: root
+    group: root
+    mode: "0440"
+    # Full path so the validate works even under a non-login su (no sbin on PATH).
+    validate: "/usr/sbin/visudo -cf %s"

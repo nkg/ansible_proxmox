@@ -14,51 +14,11 @@
 # at api_access_token_output_path); it is never sent to SOPS by this role.
 
 # ---- System user (Linux) ----
-
-- name: Install sudo
-  ansible.builtin.apt:
-    name: sudo
-    state: present
-    update_cache: true
-
-- name: Create admin group
-  ansible.builtin.group:
-    name: "{{ api_access_user }}"
-    state: present
-
-- name: Create admin user
-  ansible.builtin.user:
-    name: "{{ api_access_user }}"
-    group: "{{ api_access_user }}"
-    groups: sudo
-    append: true
-    shell: /bin/bash
-    create_home: true
-    state: present
-    password: "!"
-
-- name: Deploy IaC SSH key for admin user
-  ansible.posix.authorized_key:
-    user: "{{ api_access_user }}"
-    key: "{{ api_access_admin_ssh_key }}"
-    state: present
-  when: api_access_admin_ssh_key | length > 0
-
-- name: Deploy passphrase-protected SSH key for root
-  ansible.posix.authorized_key:
-    user: root
-    key: "{{ api_access_root_ssh_key }}"
-    state: present
-  when: api_access_root_ssh_key | length > 0
-
-- name: Grant admin user passwordless sudo
-  ansible.builtin.copy:
-    dest: "/etc/sudoers.d/{{ api_access_user }}"
-    content: "{{ api_access_user }} ALL=(ALL) NOPASSWD:ALL\n"
-    owner: root
-    group: root
-    mode: "0440"
-    validate: "visudo -cf %s"
+# The IaC admin user (passwordless sudo + SSH key) is the bootstrap step — see
+# bootstrap.yml. Tagged so `--tags bootstrap` runs only the user creation.
+- name: Create the IaC admin user (bootstrap)
+  ansible.builtin.import_tasks: bootstrap.yml
+  tags: [bootstrap]
 
 # ---- Proxmox storage pool content types ----
 # Idempotent: read each pool's current content list, only call `pvesm set`

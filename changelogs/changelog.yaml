@@ -1,6 +1,16 @@
 ---
 ancestor: null
 releases:
+  1.0.2:
+    release_date: "2026-06-16"
+    changes:
+      bugfixes:
+        - repos — disable the stock enterprise pve/ceph repos before any apt call, so a no-subscription host's 401 no longer breaks apt update.
+        - host_config — put /usr/sbin on PATH for the apparmor_parser unload so it resolves under a non-login su.
+        - api_access — accept the SSH key as a file path (api_access_*_ssh_key_file) and trim it; full-path visudo and no apt-update in bootstrap.
+      minor_changes:
+        - api_access — bootstrap (Linux IaC user) split into bootstrap.yml (--tags bootstrap); added a container molecule scenario, now in CI.
+        - playbooks — site.yml and the new api_access.yml put /usr/sbin on PATH play-wide (Proxmox CLI + konstruktoid under su).
   1.0.1:
     release_date: "2026-06-16"
     changes:
