@@ -1,0 +1,24 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  tasks:
+    # The LXC AppArmor-fix path always creates the disable/ directory before
+    # looking for stub profiles, so its presence confirms the path ran.
+    - name: Check the AppArmor disable directory was created
+      ansible.builtin.stat:
+        path: /etc/apparmor.d/disable
+      register: aa_disable
+
+    - name: Assert AppArmor disable directory exists
+      ansible.builtin.assert:
+        that:
+          - aa_disable.stat.exists
+          - aa_disable.stat.isdir
+        fail_msg: "host_config lxc path did not create /etc/apparmor.d/disable"
+
+    # HA units don't exist in the container; the disable-HA task uses
+    # failed_when:false, so a clean converge is itself the assertion that the
+    # single-node path ran without error.
+    - name: Confirm host facts are reachable after converge
+      ansible.builtin.ping:

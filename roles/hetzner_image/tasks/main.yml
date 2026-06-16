@@ -1,0 +1,42 @@
+---
+# tasks file for nkg.proxmox.hetzner_image
+#
+# Provisions Proxmox VE onto a Hetzner dedicated server that has been booted
+# into RESCUE MODE, using the QEMU autoinstall flow. Each phase is split into
+# its own include file:
+#   facts     — gather/compute network facts and detect prior installs
+#   prereqs   — add the Proxmox repo, install tooling, download the ISO and
+#               build the unattended autoinstall ISO (answer.toml + first-boot.sh)
+#   install   — boot the autoinstall ISO under QEMU to install onto bare metal
+#   configure — boot the installed system under QEMU with SSH port-forwarding,
+#               configure hostname/network/sysctl over SSH, then shut down
+#   post      — clean up temp files, reboot into real Proxmox, verify the API
+#
+# Ported from Regularmusic/iac proxmox_prereqs / proxmox_install /
+# proxmox_configure / proxmox_post and the hetzner.yml pre_tasks.
+#
+# WARNING: this role is DESTRUCTIVE — it wipes the target disks listed in
+# hetzner_image_disks.
+
+- name: Gather and compute install facts
+  ansible.builtin.import_tasks: facts.yml
+  tags: [hetzner_image, facts]
+
+- name: Prepare prerequisites and autoinstall media
+  ansible.builtin.import_tasks: prereqs.yml
+  when: not hetzner_image_installed.stat.exists
+  tags: [hetzner_image, prereqs]
+
+- name: Install Proxmox VE via QEMU
+  ansible.builtin.import_tasks: install.yml
+  when: not hetzner_image_installed.stat.exists
+  tags: [hetzner_image, install]
+
+- name: Configure the installed Proxmox under QEMU
+  ansible.builtin.import_tasks: configure.yml
+  when: not hetzner_image_installed.stat.exists
+  tags: [hetzner_image, configure]
+
+- name: Clean up, reboot and verify
+  ansible.builtin.import_tasks: post.yml
+  tags: [hetzner_image, post]

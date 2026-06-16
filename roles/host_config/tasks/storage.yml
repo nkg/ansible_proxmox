@@ -1,0 +1,21 @@
+---
+# Configure local storage content types.
+# Enables snippets (cloud-init configs, hookscripts) and import (qcow2 cloud
+# images) on the Proxmox "local" datastore — must run before image downloads.
+# Ported from Regularmusic/iac proxmox_setup storage.yml.
+
+- name: Get current local storage content types
+  ansible.builtin.command:
+    cmd: pvesh get /storage/local --output-format json
+  register: host_config_storage_status
+  changed_when: false
+
+- name: Configure local storage content types
+  ansible.builtin.command:
+    cmd: pvesm set local --content "{{ host_config_local_storage_content }}"
+  register: host_config_storage_set
+  changed_when: host_config_storage_set.rc == 0
+  when: >-
+    (host_config_storage_status.stdout | from_json).content | default('')
+    | split(',') | sort
+    != host_config_local_storage_content | split(',') | sort

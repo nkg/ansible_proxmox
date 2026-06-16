@@ -1,0 +1,171 @@
+---
+# Enhanced networking configuration — proxy ARP, secondary IP routing,
+# ifupdown2, dual-bridge (public vmbr0 + private vmbr1 with NAT).
+# Ported from Regularmusic/iac proxmox_setup networking.yml.
+#
+# This assumes the Hetzner single-server bridged topology. It rewrites
+# /etc/network/interfaces, so it is opt-in (host_config_manage_networking) and
+# the bridge/subnet defaults must match your environment before enabling.
+
+- name: Install ifupdown2 for ifreload support
+  ansible.builtin.apt:
+    name: ifupdown2
+    state: present
+    cache_valid_time: "{{ host_config_apt_cache_valid_time }}"
+
+- name: Detect bridge member NIC
+  ansible.builtin.command: ls /sys/class/net/{{ host_config_bridge_name }}/brif/
+  register: host_config_bridge_members
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Set NIC from bridge members
+  ansible.builtin.set_fact:
+    host_config_physical_nic: >-
+      {{ host_config_bridge_members.stdout_lines
+         | reject('match', '^(tap|veth|fwbr|fwpr|fwln|vif)')
+         | list | sort | first }}
+  when:
+    - host_config_bridge_members.rc == 0
+    - host_config_bridge_members.stdout_lines | reject('match', '^(tap|veth|fwbr|fwpr|fwln|vif)') | list | length > 0
+
+- name: "Fallback: Detect NIC from Ethernet interfaces"
+  ansible.builtin.shell: |
+    set -o pipefail
+    for iface in /sys/class/net/*; do
+      name=$(basename "$iface")
+      [ "$name" = "lo" ] && continue
+      case "$name" in
+        tap*|veth*|fwbr*|fwpr*|fwln*|vif*|vmbr*|bond*|dummy*|docker*|br-*) continue ;;
+      esac
+      [ -d "$iface/bridge" ] && continue
+      [ "$(cat "$iface/type" 2>/dev/null)" = "1" ] || continue
+      echo "$name"
+    done
+  args:
+    executable: /bin/bash
+  register: host_config_nic_fallback
+  changed_when: false
+  check_mode: false
+  when: host_config_physical_nic is not defined
+
+- name: Set NIC from fallback detection
+  ansible.builtin.set_fact:
+    host_config_physical_nic: "{{ host_config_nic_fallback.stdout_lines | sort | first }}"
+  when:
+    - host_config_physical_nic is not defined
+    - host_config_nic_fallback.stdout_lines | length > 0
+
+- name: Validate NIC detected
+  ansible.builtin.assert:
+    that:
+      - host_config_physical_nic is defined
+      - host_config_physical_nic | length > 0
+    fail_msg: >-
+      No network interface found for bridge {{ host_config_bridge_name }}.
+      Bridge members: {{ host_config_bridge_members.stdout_lines | default([]) }}.
+      Ethernet interfaces: {{ (host_config_nic_fallback | default({})).stdout_lines | default([]) }}.
+
+- name: Gather network facts
+  ansible.builtin.setup:
+    gather_subset:
+      - network
+
+- name: Validate required network variables
+  ansible.builtin.assert:
+    that:
+      - ansible_default_ipv4.address is defined
+      - ansible_default_ipv4.gateway is defined
+      - ansible_default_ipv4.netmask is defined
+      - host_config_physical_nic | length > 0
+      - host_config_bridge_address | length > 0
+    fail_msg: >-
+      Missing required network variables. Ensure the server has booted with
+      a working bridge configuration and all network vars are set.
+
+- name: Check if interfaces will change
+  ansible.builtin.template:
+    src: interfaces.j2
+    dest: /etc/network/interfaces
+    owner: root
+    group: root
+    mode: "0644"
+  check_mode: true
+  register: host_config_interfaces_check
+
+- name: Backup existing network interfaces
+  ansible.builtin.copy:
+    src: /etc/network/interfaces
+    dest: /etc/network/interfaces.bak.{{ ansible_date_time.iso8601_basic_short }}
+    remote_src: true
+    mode: "0644"
+  when:
+    - host_config_backup_interfaces
+    - host_config_interfaces_check is changed
+
+- name: Deploy network interfaces configuration
+  ansible.builtin.template:
+    src: interfaces.j2
+    dest: /etc/network/interfaces
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  notify: Restart networking
+
+- name: Ensure iptables is installed (for NAT masquerade)
+  ansible.builtin.apt:
+    name: iptables
+    state: present
+    cache_valid_time: "{{ host_config_apt_cache_valid_time }}"
+
+- name: Configure sysctl for proxy_arp and IP forwarding
+  ansible.builtin.copy:
+    dest: "{{ host_config_sysctl_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Ansible managed
+      # Enable IP forwarding for NAT on private bridge
+      net.ipv4.ip_forward=1
+      # Proxy ARP for additional IP routing
+      net.ipv4.conf.all.proxy_arp=1
+      net.ipv4.conf.default.proxy_arp=1
+      net.ipv4.conf.{{ host_config_physical_nic }}.proxy_arp=1
+      net.ipv4.conf.{{ host_config_bridge_name }}.proxy_arp=1
+  notify: Reload sysctl
+
+- name: Deploy resolv.conf
+  ansible.builtin.copy:
+    dest: /etc/resolv.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Ansible managed
+      {% for ns in host_config_nameservers %}
+      nameserver {{ ns }}
+      {% endfor %}
+  when: host_config_nameservers | length > 0
+
+- name: Flush handlers to apply network changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for SSH connectivity after network changes
+  ansible.builtin.wait_for_connection:
+    delay: 5
+    timeout: 120
+
+- name: Verify primary bridge is up
+  ansible.builtin.command: ip link show {{ host_config_bridge_name }}
+  register: host_config_vmbr0_check
+  changed_when: false
+  failed_when: "'state UP' not in host_config_vmbr0_check.stdout"
+
+- name: Verify private bridge exists
+  ansible.builtin.command: ip link show {{ host_config_private_bridge_name }}
+  register: host_config_vmbr1_check
+  changed_when: false
+  failed_when: host_config_vmbr1_check.rc != 0

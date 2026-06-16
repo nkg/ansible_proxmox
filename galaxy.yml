@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+namespace: nkg
+name: proxmox
+version: 1.0.0
+readme: README.md
+
+authors:
+  - nkg <neil@woowoosoft.com>
+
+description: >-
+  Provision, configure, secure and harden Proxmox VE servers — including
+  Hetzner bare-metal install, CrowdSec, and konstruktoid hardening.
+
+license:
+  - GPL-2.0-or-later
+
+tags:
+  - proxmox
+  - virtualization
+  - hetzner
+  - crowdsec
+  - hardening
+  - infrastructure
+  - debian
+
+# Collections required for this collection's roles to work.
+dependencies:
+  ansible.posix: ">=1.5.0"
+  community.general: ">=8.0.0"
+  ansible.utils: ">=2.10.0"
+
+repository: https://github.com/nkg/proxmox
+documentation: https://github.com/nkg/proxmox/blob/main/README.md
+homepage: https://github.com/nkg/proxmox
+issues: https://github.com/nkg/proxmox/issues
+
+# Files/dirs excluded from the built collection artifact.
+build_ignore:
+  - .ansible
+  - .github
+  - .gitignore
+  - .yamllint
+  - requirements.txt
+  - "roles/*/molecule"
+  - "*.tar.gz"
+  - .pytest_cache
+  - __pycache__

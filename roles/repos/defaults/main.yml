@@ -1,0 +1,26 @@
+---
+# defaults file for nkg.proxmox.repos
+
+# Use the paid enterprise repositories instead of the free no-subscription
+# ones. Requires a valid subscription key already configured on the host.
+repos_use_enterprise: false
+
+# Enable the free pve-no-subscription repository.
+repos_no_subscription: true
+
+# Enable the Ceph no-subscription repository.
+repos_ceph_enabled: false
+repos_ceph_release: quincy
+
+# Debian base suite. Override for a non-default release if needed.
+repos_debian_suite: "{{ ansible_distribution_release }}"
+
+# Remove the "no valid subscription" nag dialog from the web UI.
+repos_remove_subscription_nag: true
+# Path to the web UI JS bundle that is patched, and the APT hook that
+# re-applies the patch after proxmox-widget-toolkit upgrades.
+repos_widget_toolkit_path: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+repos_no_nag_script_dest: /etc/apt/apt.conf.d/no-nag-script
+
+# Run `apt update` after the repository changes are applied.
+repos_update_cache: true

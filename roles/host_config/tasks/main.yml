@@ -1,0 +1,47 @@
+---
+# tasks file for nkg.proxmox.host_config
+#
+# Post-install configuration of a running Proxmox VE host. Ported from
+# Regularmusic/iac proxmox_setup. Each concern is gated by a toggle: the
+# baseline ones (HA disable) default on; the environment-specific ones
+# (networking, CPU/SMT, storage content types, the konstruktoid.hardening
+# interaction fixes, and ACME) default off — enable the ones you need.
+
+- name: Re-gather facts
+  ansible.builtin.setup:
+  tags: [host_config]
+
+- name: Disable HA services (single-node)
+  ansible.builtin.import_tasks: single_node.yml
+  when: host_config_disable_ha | bool
+  tags: [host_config, ha]
+
+- name: CPU configuration (enable SMT)
+  ansible.builtin.import_tasks: cpu.yml
+  when: host_config_manage_cpu | bool
+  tags: [host_config, cpu]
+
+- name: Local storage content types
+  ansible.builtin.import_tasks: storage.yml
+  when: host_config_manage_storage | bool
+  tags: [host_config, storage]
+
+- name: LXC AppArmor stub fix
+  ansible.builtin.import_tasks: lxc.yml
+  when: host_config_lxc_apparmor_fix | bool
+  tags: [host_config, lxc]
+
+- name: /tmp exec override
+  ansible.builtin.import_tasks: tmp_exec.yml
+  when: host_config_tmp_exec_override | bool
+  tags: [host_config, tmp]
+
+- name: Networking configuration
+  ansible.builtin.import_tasks: networking.yml
+  when: host_config_manage_networking | bool
+  tags: [host_config, network]
+
+- name: Let's Encrypt certificate for the web UI (ACME)
+  ansible.builtin.import_tasks: acme.yml
+  when: host_config_acme_enabled | bool
+  tags: [host_config, acme]

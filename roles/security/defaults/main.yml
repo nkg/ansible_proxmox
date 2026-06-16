@@ -1,0 +1,92 @@
+---
+# defaults file for nkg.proxmox.security
+#
+# This role applies the externally-maintained konstruktoid.hardening role with a
+# vetted, Proxmox-safe set of overrides (derived from Regularmusic/iac
+# group_vars). konstruktoid.hardening is a CIS/STIG-aligned baseline; its
+# defaults are aggressive and will break a Proxmox host unless tuned — hence the
+# overrides below. Every setting is exposed as a security_* variable so you can
+# adjust it without forking the role.
+#
+# Requires the konstruktoid.hardening role to be installed (see the collection's
+# requirements.yml). The companion AppArmor-stub and /tmp-noexec fixes that this
+# hardening pass necessitates live in nkg.proxmox.host_config
+# (host_config_lxc_apparmor_fix / host_config_tmp_exec_override).
+
+# Master switch — set false to skip hardening entirely.
+security_apply_hardening: true
+
+# SSH port konstruktoid should bind and allow.
+security_ssh_port: 22
+
+# --- konstruktoid feature toggles, adjusted for a Proxmox host ---
+security_manage_ufw: false           # conflicts with Proxmox bridge networking
+security_manage_resolved: false      # Proxmox does not use systemd-resolved
+security_manage_timesyncd: false     # Proxmox uses chrony, not systemd-timesyncd
+security_manage_aide: true
+security_manage_auditd: false        # upstream pins auditd 3.x; Trixie ships 4.x
+security_disable_wireless: false
+security_disable_root_account: false # the Proxmox web GUI needs root PAM login
+
+# --- sshd hardening (key-only; forwarding kept for ProxyJump to guest VMs) ---
+security_sshd_password_authentication: false
+security_sshd_permit_root_login: "no"
+security_sshd_use_dns: false
+security_sshd_max_auth_tries: 3
+security_sshd_max_sessions: 3
+security_sshd_client_alive_interval: 300
+security_sshd_client_alive_count_max: 2
+security_sshd_login_grace_time: 30
+security_sshd_allow_tcp_forwarding: true
+security_sshd_allow_agent_forwarding: true
+# Don't let hardening regenerate the existing Proxmox SSH host keys every run.
+security_sshd_host_keys_files:
+  - /etc/ssh/ssh_host_rsa_key
+  - /etc/ssh/ssh_host_ecdsa_key
+  - /etc/ssh/ssh_host_ed25519_key
+
+# --- Relaxed pwquality (SSH is key-only; the password is for the GUI) ---
+security_pwquality:
+  dcredit: -1
+  dictcheck: true
+  dictpath: ""
+  difok: 8
+  enforce_for_root: false
+  enforcing: true
+  gecoscheck: true
+  lcredit: -1
+  local_users_only: true
+  maxclassrepeat: 0
+  maxrepeat: 3
+  maxsequence: 3
+  minclass: 4
+  minlen: 8
+  ocredit: -1
+  retry: 3
+  ucredit: -1
+  usercheck: true
+  usersubstr: 3
+
+# --- Trixie-safe package list (upstream defaults pin Bookworm versions that
+# conflict on Trixie, and pull in auditd/postfix not wanted on Proxmox) ---
+security_packages_debian:
+  - acct
+  - apparmor-profiles
+  - apparmor-utils
+  - apt-show-versions
+  - cracklib-runtime
+  - curl
+  - debsums
+  - gnupg2
+  - libpam-apparmor
+  - libpam-cap
+  - libpam-modules
+  - libpam-tmpdir
+  - lsb-release
+  - needrestart
+  - openssh-server
+  - rsyslog
+  - sysstat
+  - systemd-journal-remote
+  - tcpd
+  - vlock

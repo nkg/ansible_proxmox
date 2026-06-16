@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  author: nkg
+  description: Install and configure CrowdSec (engine + firewall bouncer) on a Proxmox host.
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+  galaxy_tags:
+    - proxmox
+    - crowdsec
+    - security
+dependencies: []

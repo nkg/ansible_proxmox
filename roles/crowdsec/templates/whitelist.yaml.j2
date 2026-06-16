@@ -1,0 +1,12 @@
+name: crowdsecurity/whitelists
+description: "Whitelist trusted IPs and networks"
+whitelist:
+  reason: "Trusted IP/Network"
+  ip:
+{% for ip in crowdsec_whitelist_ips %}
+    - {{ ip }}
+{% endfor %}
+  cidr:
+{% for cidr in crowdsec_whitelist_cidrs %}
+    - {{ cidr }}
+{% endfor %}

@@ -1,0 +1,3 @@
+---
+# handlers file for nkg.proxmox.security
+# (none — konstruktoid.hardening manages its own service restarts)

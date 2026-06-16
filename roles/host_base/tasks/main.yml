@@ -1,0 +1,56 @@
+---
+# tasks file for nkg.proxmox.host_base
+#
+# Baseline host preparation common to every Proxmox node: hostname, /etc/hosts,
+# timezone, package upgrade + base packages, sysctl and ulimit tuning.
+
+- name: Set the system hostname
+  ansible.builtin.hostname:
+    name: "{{ host_base_hostname }}"
+  tags: [host_base, hostname]
+
+- name: Configure the timezone
+  community.general.timezone:
+    name: "{{ host_base_timezone }}"
+  tags: [host_base, timezone]
+
+- name: Update the APT cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  tags: [host_base, packages]
+
+- name: Perform a system upgrade
+  ansible.builtin.apt:
+    upgrade: dist
+    autoremove: true
+    autoclean: true
+  when: host_base_system_upgrade | bool
+  tags: [host_base, packages, upgrade]
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ host_base_packages }}"
+    state: present
+  tags: [host_base, packages]
+
+- name: Apply sysctl parameters
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/90-nkg-proxmox.conf
+    state: present
+    reload: true
+  loop: "{{ host_base_sysctl | dict2items }}"
+  when: host_base_sysctl | length > 0
+  tags: [host_base, sysctl]
+
+- name: Configure security limits
+  ansible.builtin.template:
+    src: limits.conf.j2
+    dest: /etc/security/limits.d/90-nkg-proxmox.conf
+    owner: root
+    group: root
+    mode: "0644"
+  when: host_base_limits | length > 0
+  tags: [host_base, limits]

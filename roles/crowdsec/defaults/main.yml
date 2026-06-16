@@ -1,0 +1,72 @@
+---
+# defaults file for nkg.proxmox.crowdsec
+# Ported from Regularmusic/iac ansible/roles/crowdsec.
+
+# Deployment target label (informational; surfaced in the status debug).
+crowdsec_target: "host"
+
+crowdsec_firewall: "nftables"
+crowdsec_install_bouncer: true
+# Set to true in molecule/CI to skip binary installation (architecture-dependent).
+crowdsec_skip_install: false
+
+# Versions — update these to upgrade.
+crowdsec_version: "1.7.6"
+crowdsec_bouncer_version: "0.0.34"
+
+crowdsec_collections:
+  - crowdsecurity/sshd
+  - crowdsecurity/linux
+  - crowdsecurity/iptables
+  - crowdsecurity/http-cve
+  - fulljackz/proxmox
+
+crowdsec_scenarios:
+  - crowdsecurity/ssh-bf
+  - crowdsecurity/ssh-slow-bf
+
+crowdsec_parsers:
+  - crowdsecurity/whitelists
+  - crowdsecurity/syslog-logs
+
+crowdsec_postoverflows:
+  - crowdsecurity/cdn-whitelist
+  - crowdsecurity/rdns
+
+# Console enrollment key (from https://app.crowdsec.net).
+# Set to empty string to skip enrollment.
+crowdsec_console_enrollment_key: ""
+
+crowdsec_ban_duration: "duration: 4h"
+crowdsec_prometheus_enabled: "enabled: true"
+
+crowdsec_acquis_config: |
+  ---
+  source: journalctl
+  journalctl_filter:
+    - "_SYSTEMD_UNIT=ssh.service"
+  labels:
+    type: sshd
+  ---
+  source: file
+  filenames:
+    - /var/log/auth.log
+  labels:
+    type: syslog
+  ---
+  source: file
+  filenames:
+    - /var/log/syslog
+  labels:
+    type: syslog
+
+# Trusted IPs / networks excluded from CrowdSec decisions. Override these for
+# your environment — the defaults below are examples (RFC1918 + Tailscale).
+crowdsec_whitelist_ips: []
+crowdsec_whitelist_cidrs:
+  - "10.0.0.0/8"          # private
+  - "172.16.0.0/12"       # private
+  - "192.168.0.0/16"      # private
+  - "100.64.0.0/10"       # Tailscale CGNAT
+  - "fd7a:115c:a1e0::/48" # Tailscale IPv6
+  - "fc00::/7"            # IPv6 unique-local

@@ -1,0 +1,145 @@
+---
+# Trusted TLS for the Proxmox web UI (https://<fqdn>:8006) via Proxmox's
+# built-in ACME client + Let's Encrypt, using the Cloudflare DNS-01 challenge.
+# Ported from Regularmusic/iac tasks/proxmox_acme.yml.
+#
+# DNS-01 (not HTTP-01) so we don't need to expose port 80, and it works for
+# hosts behind a dynamic/residential IP — only the Cloudflare token is needed,
+# never inbound reachability. Proxmox auto-renews via its pve-daily-update
+# timer once configured.
+#
+# Supply host_config_acme_cf_token from a vault/SOPS-backed variable. The whole
+# block is skipped when no token is provided.
+#
+# Idempotent on steady-state re-runs (`--tags acme`): the token is only
+# (re)written when the plugin is missing or the token has rotated, the node
+# ACME config is only set when it differs, and the cert is only re-ordered when
+# the live cert isn't already LE for the domain.
+
+- name: ACME — configure Let's Encrypt for the Proxmox UI
+  when: host_config_acme_cf_token | length > 0
+  block:
+    - name: ACME — validate email is set
+      ansible.builtin.assert:
+        that:
+          - host_config_acme_email | length > 0
+        fail_msg: "host_config_acme_email must be set to register a Let's Encrypt account."
+
+    - name: ACME — list existing accounts
+      ansible.builtin.command: pvenode acme account list
+      register: host_config_acme_accounts
+      changed_when: false
+
+    - name: ACME — register Let's Encrypt account
+      # `pvenode acme account register` prints the directory's Terms of Service
+      # and blocks on an interactive "Do you agree? [y|N]" prompt. Feed "y" on
+      # stdin so the play never hangs in automation (no tty to answer it).
+      ansible.builtin.command: >-
+        pvenode acme account register {{ host_config_acme_account }} {{ host_config_acme_email }}
+        --directory {{ host_config_acme_directory }}
+      args:
+        stdin: "y\n"
+      # Line-exact match so an account whose name merely contains ours — e.g.
+      # "mydefault" — can't make us skip registering "default".
+      when: host_config_acme_account not in host_config_acme_accounts.stdout_lines
+      changed_when: true
+
+    # ---- Cloudflare DNS-01 plugin credentials ----
+    # Read back the stored plugin so we only rewrite the token when it differs.
+    - name: ACME — read current Cloudflare plugin config
+      ansible.builtin.command: pvenode acme plugin config {{ host_config_acme_plugin_id }} --output-format json
+      register: host_config_acme_plugin_cfg
+      changed_when: false
+      failed_when: false
+
+    - name: ACME — compare stored token against the configured token
+      vars:
+        host_config_acme_stored_token: >-
+          {{ ((host_config_acme_plugin_cfg.stdout | from_json).data | default(''))
+             if (host_config_acme_plugin_cfg.rc == 0 and (host_config_acme_plugin_cfg.stdout | trim | length) > 0)
+             else '' }}
+      ansible.builtin.set_fact:
+        host_config_acme_plugin_present: "{{ host_config_acme_plugin_cfg.rc == 0 }}"
+        # Strip a trailing newline from the stored value before comparing, so the
+        # check stays correct whether or not Proxmox preserves the "\n".
+        host_config_acme_token_outdated: "{{ (host_config_acme_stored_token | regex_replace('\n$', '')) != 'CF_Token=' ~ host_config_acme_cf_token }}"
+      no_log: true
+
+    # Only stage the plaintext token when the plugin is missing or the token
+    # rotated — so steady-state runs report no change and the token never
+    # lingers on disk. acme.sh's cloudflare dnsapi reads CF_Token from the file.
+    - name: ACME — install/update Cloudflare DNS-01 plugin credentials
+      when: not host_config_acme_plugin_present or host_config_acme_token_outdated
+      block:
+        - name: ACME — stage Cloudflare plugin credentials
+          ansible.builtin.copy:
+            dest: /root/.acme-cf-data
+            content: "CF_Token={{ host_config_acme_cf_token }}\n"
+            owner: root
+            group: root
+            mode: "0600"
+          no_log: true
+
+        - name: ACME — add Cloudflare DNS-01 plugin
+          ansible.builtin.command: >-
+            pvenode acme plugin add dns {{ host_config_acme_plugin_id }}
+            --api cf --data /root/.acme-cf-data
+          when: not host_config_acme_plugin_present
+          changed_when: true
+          no_log: true
+
+        - name: ACME — update Cloudflare DNS-01 plugin credentials
+          ansible.builtin.command: >-
+            pvenode acme plugin set {{ host_config_acme_plugin_id }} --data /root/.acme-cf-data
+          when: host_config_acme_plugin_present
+          changed_when: true
+          no_log: true
+      always:
+        - name: ACME — remove staged plugin credentials
+          ansible.builtin.file:
+            path: /root/.acme-cf-data
+            state: absent
+          no_log: true
+
+    # ---- Node ACME assignment ----
+    - name: ACME — read current node ACME config
+      ansible.builtin.command: pvenode config get
+      register: host_config_acme_node_cfg
+      changed_when: false
+
+    - name: ACME — assign the domain + plugin to this node
+      vars:
+        _acme_account_line: "acme: account={{ host_config_acme_account }}"
+        _acmedomain_fields: >-
+          {{ host_config_acme_node_cfg.stdout_lines
+             | select('match', '^acmedomain0:')
+             | map('regex_replace', '^acmedomain0:\s*', '')
+             | first | default('') | split(',') }}
+      ansible.builtin.command: >-
+        pvenode config set --acme account={{ host_config_acme_account }}
+        --acmedomain0 domain={{ host_config_acme_domain }},plugin={{ host_config_acme_plugin_id }}
+      when: >-
+        _acme_account_line not in host_config_acme_node_cfg.stdout_lines
+        or ('domain=' ~ host_config_acme_domain) not in _acmedomain_fields
+        or ('plugin=' ~ host_config_acme_plugin_id) not in _acmedomain_fields
+      changed_when: true
+
+    # ---- Certificate order ----
+    # Only order when the live UI cert isn't already a Let's Encrypt cert for
+    # this domain — avoids re-ordering (LE rate limits) on every run.
+    - name: ACME — inspect current UI certificate
+      ansible.builtin.command: openssl x509 -in /etc/pve/local/pveproxy-ssl.pem -noout -issuer -subject
+      register: host_config_acme_ui_cert
+      changed_when: false
+      failed_when: false
+
+    - name: ACME — order/install the certificate
+      ansible.builtin.command: pvenode acme cert order
+      register: host_config_acme_order
+      changed_when: >-
+        'Setting pveproxy certificate' in (host_config_acme_order.stdout ~ host_config_acme_order.stderr)
+        or 'Restarting pveproxy' in (host_config_acme_order.stdout ~ host_config_acme_order.stderr)
+      when: >-
+        host_config_acme_ui_cert.rc != 0
+        or ("Let's Encrypt" not in host_config_acme_ui_cert.stdout)
+        or (host_config_acme_domain not in host_config_acme_ui_cert.stdout)

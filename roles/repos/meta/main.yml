@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  author: nkg
+  description: Manage Proxmox VE APT repositories and the web UI subscription nag.
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+  galaxy_tags:
+    - proxmox
+    - apt
+    - repositories
+dependencies: []

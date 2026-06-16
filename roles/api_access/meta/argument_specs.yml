@@ -1,0 +1,29 @@
+---
+argument_specs:
+  main:
+    short_description: Create an IaC admin user and Proxmox API token on a running host.
+    options:
+      api_access_user:
+        type: str
+        default: iac
+        description: Linux + Proxmox PAM username for the IaC admin account (group/role/ACL are derived from it).
+      api_access_role_privileges:
+        type: list
+        elements: str
+        description: Proxmox API role privileges granted to the IaC role (defaults to a Terraform/OpenTofu-capable set).
+      api_access_admin_ssh_key:
+        type: str
+        default: ""
+        description: SSH public key authorized for the IaC admin user (empty skips).
+      api_access_root_ssh_key:
+        type: str
+        default: ""
+        description: SSH public key authorized for root (empty skips).
+      api_access_storage_pools:
+        type: dict
+        default: {}
+        description: 'Storage pools to set content types on, as {pool: "content,csv"}. Empty skips the storage step.'
+      api_access_token_output_path:
+        type: str
+        default: ""
+        description: Optional controller-side path to write the generated token secret to. Empty only exposes the api_access_token fact.

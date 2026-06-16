@@ -1,0 +1,41 @@
+---
+name: Molecule
+
+"on":
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  molecule:
+    name: "molecule: ${{ matrix.role }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Only roles with a container-testable scenario. api_access,
+        # hetzner_image and security need a real Proxmox host / QEMU / the
+        # konstruktoid role applied, so they are tested out of band.
+        role:
+          - crowdsec
+          - host_base
+          - host_config
+          - repos
+    steps:
+      - name: Check out the collection
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tooling
+        run: pip install -r requirements.txt
+
+      - name: Run molecule
+        working-directory: roles/${{ matrix.role }}
+        run: molecule test
+        env:
+          PY_COLORS: "1"
+          ANSIBLE_FORCE_COLOR: "1"

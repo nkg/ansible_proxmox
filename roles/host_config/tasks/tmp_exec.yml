@@ -1,0 +1,26 @@
+---
+# /tmp exec override.
+# Ported from Regularmusic/iac proxmox_setup mounts.yml.
+#
+# A hardening role with `manage_mounts` (e.g. konstruktoid.hardening) mounts
+# /tmp as tmpfs with nosuid,nodev,noexec. The noexec flag breaks Terraform's
+# remote-exec provisioner (it uploads a temp script to /tmp and runs it → exit
+# 126). Drop a systemd override that strips noexec while keeping nosuid+nodev.
+# Only needed alongside such a hardening role — hence opt-in.
+
+- name: Ensure /etc/systemd/system/tmp.mount.d exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/tmp.mount.d
+    state: directory
+    mode: "0755"
+
+- name: Allow exec on /tmp (override the hardening role's noexec)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/tmp.mount.d/override.conf
+    content: |
+      [Mount]
+      Options=mode=1777,strictatime,nosuid,nodev
+    mode: "0644"
+  notify:
+    - Reload systemd daemon
+    - Remount /tmp with exec

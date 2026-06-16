@@ -1,0 +1,34 @@
+---
+name: Lint
+
+"on":
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    name: yamllint + ansible-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the collection
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tooling
+        run: pip install -r requirements.txt
+
+      - name: Install collection and role dependencies
+        run: |
+          ansible-galaxy collection install -r requirements.yml
+          ansible-galaxy role install -r requirements.yml
+
+      - name: Run yamllint
+        run: yamllint .
+
+      - name: Run ansible-lint
+        run: ansible-lint

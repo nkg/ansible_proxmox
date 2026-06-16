@@ -1,0 +1,63 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  tasks:
+    - name: Gather hostname and package facts
+      ansible.builtin.setup:
+        gather_subset:
+          - min
+
+    - name: Check the timezone was set
+      ansible.builtin.stat:
+        path: /etc/localtime
+      register: localtime
+
+    - name: Read configured timezone
+      ansible.builtin.command: cat /etc/timezone
+      register: tz
+      changed_when: false
+      failed_when: false
+
+    - name: Assert timezone is Europe/London
+      ansible.builtin.assert:
+        that:
+          - localtime.stat.exists
+          - "'Europe/London' in tz.stdout"
+        fail_msg: "Timezone was not set to Europe/London"
+
+    - name: Check a managed package is installed
+      ansible.builtin.command: dpkg -s git
+      register: pkg
+      changed_when: false
+      failed_when: pkg.rc != 0
+
+    - name: Check the sysctl drop-in exists
+      ansible.builtin.stat:
+        path: /etc/sysctl.d/90-nkg-proxmox.conf
+      register: sysctl_file
+
+    - name: Assert sysctl drop-in was written
+      ansible.builtin.assert:
+        that:
+          - sysctl_file.stat.exists
+        fail_msg: "sysctl drop-in not found"
+
+    - name: Check the limits drop-in exists
+      ansible.builtin.stat:
+        path: /etc/security/limits.d/90-nkg-proxmox.conf
+      register: limits_file
+
+    - name: Read the limits drop-in
+      ansible.builtin.slurp:
+        src: /etc/security/limits.d/90-nkg-proxmox.conf
+      register: limits_content
+      when: limits_file.stat.exists
+
+    - name: Assert limits drop-in has the nofile entry
+      ansible.builtin.assert:
+        that:
+          - limits_file.stat.exists
+          - "'nofile' in (limits_content.content | b64decode)"
+          - "'65536' in (limits_content.content | b64decode)"
+        fail_msg: "limits drop-in missing the expected nofile entry"

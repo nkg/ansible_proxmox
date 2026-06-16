@@ -1,0 +1,28 @@
+---
+# defaults file for nkg.proxmox.host_base
+
+# Hostname to set. Defaults to the inventory hostname.
+host_base_hostname: "{{ inventory_hostname_short }}"
+
+# Timezone, e.g. "Europe/London" or "Etc/UTC".
+host_base_timezone: "Etc/UTC"
+
+# Whether to perform a full dist-upgrade during the run.
+host_base_system_upgrade: true
+
+# Base packages to ensure are present on every Proxmox host.
+host_base_packages:
+  - vim
+  - curl
+  - git
+  - htop
+  - tmux
+  - rsync
+  - gnupg
+  - ca-certificates
+
+# sysctl key/value pairs applied to /etc/sysctl.d/.
+host_base_sysctl: {}
+
+# nofile / nproc style limits written to /etc/security/limits.d/.
+host_base_limits: []

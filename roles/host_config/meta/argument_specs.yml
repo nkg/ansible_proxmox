@@ -1,0 +1,97 @@
+---
+argument_specs:
+  main:
+    short_description: Post-install Proxmox host configuration.
+    options:
+      host_config_disable_ha:
+        type: bool
+        default: true
+        description: Disable HA services (pve-ha-lrm / pve-ha-crm / corosync) on a standalone node.
+      host_config_manage_cpu:
+        type: bool
+        default: false
+        description: Enable SMT/Hyper-Threading (now and on boot via GRUB).
+      host_config_manage_storage:
+        type: bool
+        default: false
+        description: Configure the local datastore content types.
+      host_config_local_storage_content:
+        type: str
+        default: "images,rootdir,vztmpl,iso,snippets,import,backup"
+        description: Content types set on the local datastore when managed.
+      host_config_lxc_apparmor_fix:
+        type: bool
+        default: false
+        description: Disable broken lxc-* AppArmor stub profiles (needed after a blanket aa-enforce pass).
+      host_config_tmp_exec_override:
+        type: bool
+        default: false
+        description: Strip noexec from /tmp (keeping nosuid,nodev) via a systemd mount override.
+      host_config_manage_networking:
+        type: bool
+        default: false
+        description: Rewrite /etc/network/interfaces for the dual-bridge (public + private NAT) topology.
+      host_config_bridge_name:
+        type: str
+        default: vmbr0
+        description: Public bridge name.
+      host_config_private_bridge_name:
+        type: str
+        default: vmbr1
+        description: Private bridge name.
+      host_config_bridge_address:
+        type: str
+        default: "10.10.10.254"
+        description: Private bridge address.
+      host_config_private_subnet:
+        type: str
+        default: "10.10.10.0/24"
+        description: Private subnet (CIDR) used for NAT masquerade and netmask derivation.
+      host_config_secondary_ip:
+        type: str
+        default: ""
+        description: Optional Hetzner-style secondary IP routed through the public bridge.
+      host_config_nameservers:
+        type: list
+        elements: str
+        default: []
+        description: Nameservers written to /etc/resolv.conf (empty to leave it untouched).
+      host_config_backup_interfaces:
+        type: bool
+        default: true
+        description: Back up /etc/network/interfaces before rewriting it.
+      host_config_sysctl_path:
+        type: str
+        default: /etc/sysctl.d/99-proxmox-networking.conf
+        description: Path for the proxy_arp / IP-forwarding sysctl drop-in.
+      host_config_apt_cache_valid_time:
+        type: int
+        default: 3600
+        description: apt cache_valid_time used by the networking tasks.
+      host_config_acme_enabled:
+        type: bool
+        default: false
+        description: Request a Let's Encrypt certificate for the web UI via Cloudflare DNS-01.
+      host_config_acme_domain:
+        type: str
+        description: Certificate CN. Defaults to the node FQDN.
+      host_config_acme_account:
+        type: str
+        default: default
+        description: Proxmox ACME account name.
+      host_config_acme_email:
+        type: str
+        default: ""
+        description: Contact email for the Let's Encrypt account (required when ACME is enabled).
+      host_config_acme_plugin_id:
+        type: str
+        default: cf
+        description: Proxmox ACME plugin id for the Cloudflare DNS-01 challenge.
+      host_config_acme_directory:
+        type: str
+        default: https://acme-v02.api.letsencrypt.org/directory
+        description: ACME directory URL.
+      host_config_acme_cf_token:
+        type: str
+        default: ""
+        description: Cloudflare API token for DNS-01 (supply via vault/SOPS; empty skips ACME).

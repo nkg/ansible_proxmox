@@ -1,0 +1,38 @@
+---
+# tasks file for nkg.proxmox.security
+#
+# Thin wrapper that applies konstruktoid.hardening with Proxmox-safe overrides.
+# Each konstruktoid variable is sourced from a security_* default so the whole
+# baseline stays tunable without forking this role. See defaults/main.yml for
+# the rationale behind each override.
+#
+# konstruktoid.hardening must be installed (see the collection requirements.yml).
+
+- name: Apply konstruktoid.hardening with Proxmox-safe settings
+  ansible.builtin.include_role:
+    name: konstruktoid.hardening
+  vars:
+    manage_ufw: "{{ security_manage_ufw }}"
+    manage_resolved: "{{ security_manage_resolved }}"
+    manage_timesyncd: "{{ security_manage_timesyncd }}"
+    manage_aide: "{{ security_manage_aide }}"
+    manage_auditd: "{{ security_manage_auditd }}"
+    disable_wireless: "{{ security_disable_wireless }}"
+    disable_root_account: "{{ security_disable_root_account }}"
+    sshd_ports:
+      - "{{ security_ssh_port | string }}"
+    sshd_password_authentication: "{{ security_sshd_password_authentication }}"
+    sshd_permit_root_login: "{{ security_sshd_permit_root_login }}"
+    sshd_use_dns: "{{ security_sshd_use_dns }}"
+    sshd_max_auth_tries: "{{ security_sshd_max_auth_tries }}"
+    sshd_max_sessions: "{{ security_sshd_max_sessions }}"
+    sshd_client_alive_interval: "{{ security_sshd_client_alive_interval }}"
+    sshd_client_alive_count_max: "{{ security_sshd_client_alive_count_max }}"
+    sshd_login_grace_time: "{{ security_sshd_login_grace_time }}"
+    sshd_allow_tcp_forwarding: "{{ security_sshd_allow_tcp_forwarding }}"
+    sshd_allow_agent_forwarding: "{{ security_sshd_allow_agent_forwarding }}"
+    sshd_host_keys_files: "{{ security_sshd_host_keys_files }}"
+    pwquality: "{{ security_pwquality }}"
+    packages_debian: "{{ security_packages_debian }}"
+  when: security_apply_hardening | bool
+  tags: [security, hardening]

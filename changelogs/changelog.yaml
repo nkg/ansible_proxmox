@@ -1,0 +1,10 @@
+---
+ancestor: null
+releases:
+  1.0.0:
+    release_date: "2026-06-16"
+    changes:
+      release_summary: >-
+        Initial release. Roles to provision, configure, secure and harden
+        Proxmox VE: repos, host_base, host_config, security (konstruktoid
+        wrapper), crowdsec, api_access, and hetzner_image (bare-metal install).

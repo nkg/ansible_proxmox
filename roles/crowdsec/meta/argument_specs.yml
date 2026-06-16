@@ -1,0 +1,70 @@
+---
+argument_specs:
+  main:
+    short_description: Install and configure CrowdSec on a Proxmox host.
+    options:
+      crowdsec_target:
+        type: str
+        default: host
+        description: Informational deployment-target label (shown in the status output).
+      crowdsec_firewall:
+        type: str
+        default: nftables
+        choices: [nftables, iptables]
+        description: Backend the firewall bouncer integrates with.
+      crowdsec_install_bouncer:
+        type: bool
+        default: true
+        description: Install the CrowdSec firewall bouncer.
+      crowdsec_skip_install:
+        type: bool
+        default: false
+        description: Skip binary installation (used in molecule/CI on unsupported arches).
+      crowdsec_version:
+        type: str
+        default: "1.7.6"
+        description: CrowdSec engine version to install.
+      crowdsec_bouncer_version:
+        type: str
+        default: "0.0.34"
+        description: CrowdSec firewall bouncer version to install.
+      crowdsec_collections:
+        type: list
+        elements: str
+        description: Hub collections to install.
+      crowdsec_scenarios:
+        type: list
+        elements: str
+        description: Hub scenarios to install.
+      crowdsec_parsers:
+        type: list
+        elements: str
+        description: Hub parsers to install.
+      crowdsec_postoverflows:
+        type: list
+        elements: str
+        description: Hub postoverflows to install.
+      crowdsec_console_enrollment_key:
+        type: str
+        default: ""
+        description: CrowdSec console enrollment key (empty to skip enrollment).
+      crowdsec_ban_duration:
+        type: str
+        default: "duration: 4h"
+        description: profiles.yaml duration line applied to the default profile.
+      crowdsec_prometheus_enabled:
+        type: str
+        default: "enabled: true"
+        description: config.yaml Prometheus enabled line.
+      crowdsec_acquis_config:
+        type: str
+        description: Acquisition configuration written to /etc/crowdsec/acquis.d/custom.yaml.
+      crowdsec_whitelist_ips:
+        type: list
+        elements: str
+        default: []
+        description: Individual trusted IPs to whitelist.
+      crowdsec_whitelist_cidrs:
+        type: list
+        elements: str
+        description: Trusted CIDRs to whitelist.

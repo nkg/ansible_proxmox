@@ -1,0 +1,14 @@
+---
+# Disable HA services (not needed for a single-node setup).
+# Ported from Regularmusic/iac proxmox_setup services.yml.
+
+- name: Disable HA services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop:
+    - pve-ha-lrm
+    - pve-ha-crm
+    - corosync
+  failed_when: false

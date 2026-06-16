@@ -1,0 +1,144 @@
+---
+argument_specs:
+  main:
+    short_description: Provision Proxmox VE onto a Hetzner dedicated server via QEMU autoinstall.
+    description:
+      - Runs against a Hetzner dedicated server booted in RESCUE MODE.
+      - Builds an unattended Proxmox autoinstall ISO, installs it onto the bare
+        metal disks under QEMU, configures the installed system over SSH, then
+        reboots into Proxmox and verifies the API.
+      - This role is DESTRUCTIVE — it wipes the disks in C(hetzner_image_disks).
+    options:
+      # --- Required identity / install inputs ---
+      hetzner_image_disks:
+        type: list
+        elements: str
+        required: true
+        description: Host disk device paths to install onto (e.g. ['/dev/nvme0n1', '/dev/nvme1n1']). WIPED.
+      hetzner_image_hostname:
+        type: str
+        required: true
+        description: Proxmox node hostname.
+      hetzner_image_root_password_hashed:
+        type: str
+        required: true
+        description: Hashed root password for the installer (e.g. from `openssl passwd -6`).
+      hetzner_image_ssh_public_key:
+        type: str
+        required: true
+        description: SSH public key deployed to root for interactive access.
+      hetzner_image_admin_ssh_public_key:
+        type: str
+        default: "{{ hetzner_image_ssh_public_key }}"
+        description: SSH public key deployed to the admin/automation user (defaults to the root key).
+      hetzner_image_email:
+        type: str
+        required: true
+        description: Admin contact email used as the installer mailto.
+      # --- Installer answer.toml options ---
+      hetzner_image_keyboard:
+        type: str
+        default: en-gb
+        description: Keyboard layout for the installer.
+      hetzner_image_country:
+        type: str
+        default: gb
+        description: Country code for the installer.
+      hetzner_image_timezone:
+        type: str
+        default: UTC
+        description: Timezone for the installer.
+      hetzner_image_domain:
+        type: str
+        default: local
+        description: DNS domain for the node FQDN.
+      hetzner_image_filesystem:
+        type: str
+        default: zfs
+        description: Root filesystem type for the installer.
+      hetzner_image_zfs_raid:
+        type: str
+        default: raid1
+        description: ZFS RAID level (used only when filesystem is zfs).
+      # --- Admin user / Proxmox API ---
+      hetzner_image_admin_user:
+        type: str
+        default: iac
+        description: Admin/automation username created by first-boot.sh and on the staging VM.
+      hetzner_image_local_storage_content:
+        type: str
+        default: "iso,vztmpl,snippets,backup,import"
+        description: Content types set on the Proxmox local datastore by first-boot.sh.
+      hetzner_image_admin_role_privileges:
+        type: list
+        elements: str
+        description: Proxmox role privileges granted to the API role created by first-boot.sh.
+      # --- ISO source / destinations ---
+      hetzner_image_iso_base_url:
+        type: str
+        default: "https://enterprise.proxmox.com/iso"
+        description: Base URL of the Proxmox ISO mirror.
+      hetzner_image_iso_dest:
+        type: str
+        default: /root/pve.iso
+        description: Path the downloaded Proxmox ISO is saved to on the target.
+      hetzner_image_autoinstall_iso_dest:
+        type: str
+        default: /root/pve-autoinstall.iso
+        description: Path the generated unattended autoinstall ISO is written to.
+      # --- QEMU settings ---
+      hetzner_image_qemu:
+        type: dict
+        description: >-
+          QEMU settings for the install + configure phases. Keys: cpus, memory (MB),
+          ssh_port (config-phase SSH forward), install_timeout, config_timeout, and
+          password (temporary root password for the staging VM).
+      # --- Networking ---
+      hetzner_image_private_subnet:
+        type: str
+        default: "10.10.10.0/24"
+        description: Private/NAT bridge subnet (CIDR); also used to derive the private bridge IP.
+      hetzner_image_dns_servers:
+        type: list
+        elements: str
+        description: DNS resolvers written to /etc/resolv.conf inside the guest.
+      hetzner_image_disabled_services:
+        type: list
+        elements: str
+        default: [rpcbind, rpcbind.socket]
+        description: systemd services disabled after install (single-node, no HA).
+      hetzner_image_hetzner_secondary_ip:
+        type: str
+        default: ""
+        description: Optional Hetzner-style secondary IP routed through vmbr0.
+      # --- Cleanup ---
+      hetzner_image_cleanup_files:
+        type: list
+        elements: str
+        description: Temporary file paths removed by the post phase after install.
+      # --- API token capture ---
+      hetzner_image_capture_token:
+        type: bool
+        default: true
+        description: Capture the API token first-boot.sh writes and expose it as the hetzner_image_api_token fact.
+      hetzner_image_token_output_path:
+        type: str
+        default: ""
+        description: Optional controller-side path to also write the token secret to (empty = fact only).
+      hetzner_image_remove_token_after_capture:
+        type: bool
+        default: false
+        description: Delete /root/token from the host after capturing it.
+      # --- Debug / VNC ---
+      hetzner_image_debug:
+        type: bool
+        default: false
+        description: Enable VNC + QEMU monitor on the install/configure QEMU processes.
+      hetzner_image_debug_vnc_display:
+        type: str
+        default: ":1"
+        description: VNC display address used when debug is enabled.
+      hetzner_image_debug_monitor_port:
+        type: int
+        default: 4444
+        description: QEMU monitor TCP port used when debug is enabled.

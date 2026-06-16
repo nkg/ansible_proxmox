@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  author: nkg
+  description: Post-install Proxmox host configuration — single-node HA, networking, LXC, ACME.
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+  galaxy_tags:
+    - proxmox
+    - configuration
+    - acme
+dependencies: []

@@ -1,0 +1,239 @@
+---
+# tasks file for nkg.proxmox.api_access
+#
+# Ported from Regularmusic/iac proxmox_api_setup.
+#
+# Configure an IaC admin user and Proxmox API token on an already-running
+# Proxmox VE host. Creates: a Linux admin user (group, sudo, SSH keys),
+# optional storage pool content types, the Proxmox PAM user/group/role/ACL,
+# and an API token for Terraform/OpenTofu.
+#
+# Web-UI TLS is intentionally NOT handled here — use the ACME tasks in the
+# nkg.proxmox.host_config role for that. The generated token is registered and
+# exposed as the api_access_token fact (and optionally written to a local file
+# at api_access_token_output_path); it is never sent to SOPS by this role.
+
+# ---- System user (Linux) ----
+
+- name: Install sudo
+  ansible.builtin.apt:
+    name: sudo
+    state: present
+    update_cache: true
+
+- name: Create admin group
+  ansible.builtin.group:
+    name: "{{ api_access_user }}"
+    state: present
+
+- name: Create admin user
+  ansible.builtin.user:
+    name: "{{ api_access_user }}"
+    group: "{{ api_access_user }}"
+    groups: sudo
+    append: true
+    shell: /bin/bash
+    create_home: true
+    state: present
+    password: "!"
+
+- name: Deploy IaC SSH key for admin user
+  ansible.posix.authorized_key:
+    user: "{{ api_access_user }}"
+    key: "{{ api_access_admin_ssh_key }}"
+    state: present
+  when: api_access_admin_ssh_key | length > 0
+
+- name: Deploy passphrase-protected SSH key for root
+  ansible.posix.authorized_key:
+    user: root
+    key: "{{ api_access_root_ssh_key }}"
+    state: present
+  when: api_access_root_ssh_key | length > 0
+
+- name: Grant admin user passwordless sudo
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/{{ api_access_user }}"
+    content: "{{ api_access_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: "visudo -cf %s"
+
+# ---- Proxmox storage pool content types ----
+# Idempotent: read each pool's current content list, only call `pvesm set`
+# when it differs from the desired list. Skipped entirely when
+# api_access_storage_pools is empty (the default).
+
+- name: Get current content types for managed storage pools
+  ansible.builtin.command:
+    cmd: pvesh get /storage/{{ item.key }} --output-format json
+  loop: "{{ api_access_storage_pools | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: api_access_pool_status
+  changed_when: false
+  when: api_access_storage_pools | length > 0
+
+- name: Configure storage pool content types
+  ansible.builtin.command:
+    cmd: pvesm set {{ item.item.key }} --content "{{ item.item.value }}"
+  loop: "{{ api_access_pool_status.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when:
+    - api_access_storage_pools | length > 0
+    - not (item.skipped | default(false))
+    - >-
+      (item.stdout | from_json).content | default('')
+      | split(',') | sort
+      != item.item.value | split(',') | sort
+  changed_when: true
+
+# ---- Proxmox API user/group/role ----
+
+- name: Check if Proxmox API user exists
+  ansible.builtin.command: pveum user list --output-format json
+  register: api_access_users
+  changed_when: false
+
+- name: Create Proxmox API user
+  ansible.builtin.command: >-
+    pveum user add {{ api_access_user }}@pam -comment "API user for IaC"
+  when: api_access_user ~ '@pam' not in (api_access_users.stdout | from_json | map(attribute='userid') | list)
+  changed_when: true
+
+- name: Check if Proxmox group exists
+  ansible.builtin.command: pveum group list --output-format json
+  register: api_access_groups
+  changed_when: false
+
+- name: Create Proxmox group
+  ansible.builtin.command: >-
+    pveum group add {{ api_access_user }}-group -comment "Group for IaC API users"
+  when: api_access_user ~ '-group' not in (api_access_groups.stdout | from_json | map(attribute='groupid') | list)
+  changed_when: true
+
+- name: Check if Proxmox role exists
+  ansible.builtin.command: pveum role list --output-format json
+  register: api_access_roles
+  changed_when: false
+
+- name: Create Proxmox role
+  ansible.builtin.command: >-
+    pveum role add {{ api_access_user }}-role
+    --privs "{{ api_access_role_privileges | join(',') }}"
+  when: api_access_user ~ '-role' not in (api_access_roles.stdout | from_json | map(attribute='roleid') | list)
+  changed_when: true
+
+- name: Re-list Proxmox groups (for membership check)
+  ansible.builtin.command: pveum group list --output-format json
+  register: api_access_groups_after_create
+  changed_when: false
+
+# `pveum user list` omits group membership (the /access/users index only
+# returns `groups` with full=1, which the CLI doesn't pass). The group list is
+# the reliable source: each group carries a comma-separated `users` field.
+# (Upstream fix: Regularmusic/iac PR #516.)
+- name: Assign user to group
+  ansible.builtin.command: >-
+    pveum user modify {{ api_access_user }}@pam -group {{ api_access_user }}-group
+  vars:
+    api_access_group_record: >-
+      {{ (api_access_groups_after_create.stdout | from_json)
+         | selectattr('groupid', 'equalto', api_access_user ~ '-group')
+         | first | default({}) }}
+    api_access_group_members: >-
+      {{ (api_access_group_record.users | default('')).split(',') | reject('equalto', '') | list }}
+  when: (api_access_user ~ '@pam') not in api_access_group_members
+  changed_when: true
+
+- name: List Proxmox ACL entries
+  ansible.builtin.command: pveum acl list --output-format json
+  register: api_access_acls
+  changed_when: false
+
+- name: Assign group ACL
+  ansible.builtin.command: >-
+    pveum acl modify / -group {{ api_access_user }}-group -role {{ api_access_user }}-role
+  vars:
+    api_access_matching_acls: >-
+      {{ (api_access_acls.stdout | from_json)
+         | selectattr('path', 'equalto', '/')
+         | selectattr('type', 'equalto', 'group')
+         | selectattr('ugid', 'equalto', api_access_user ~ '-group')
+         | selectattr('roleid', 'equalto', api_access_user ~ '-role')
+         | list }}
+  when: api_access_matching_acls | length == 0
+  changed_when: true
+
+# ---- API token ----
+
+- name: Check if API token already exists
+  ansible.builtin.command: pveum user token list {{ api_access_user }}@pam --output-format json
+  register: api_access_tokens
+  changed_when: false
+
+- name: Generate API token
+  ansible.builtin.shell: |
+    set -euo pipefail
+    pveum user token add {{ api_access_user }}@pam apitoken --privsep 0 \
+      | grep -E 'value.*[a-z0-9]+(-[a-z0-9]+){4,}' \
+      | awk '{print $4}' \
+      | head -n1
+  args:
+    executable: /bin/bash
+  register: api_access_token_result
+  when: "'apitoken' not in (api_access_tokens.stdout | from_json | map(attribute='tokenid', default='') | list | join(' '))"
+  changed_when: true
+  no_log: true
+
+- name: Verify token was generated
+  ansible.builtin.fail:
+    msg: "Failed to generate API token — empty output from pveum"
+  when:
+    - api_access_token_result is not skipped
+    - (api_access_token_result.stdout | default('')) | length == 0
+
+- name: Set API token fact
+  ansible.builtin.set_fact:
+    api_access_token: "{{ api_access_token_result.stdout | trim }}"
+    api_access_token_id: "{{ api_access_user }}@pam!apitoken"
+  when: api_access_token_result is not skipped
+  no_log: true
+
+# ---- Optionally persist the token locally ----
+# Off by default (api_access_token_output_path == ""). When set, the secret is
+# written to the given path on the controller. This role never calls SOPS.
+
+- name: Write API token to local file
+  delegate_to: localhost
+  become: false
+  ansible.builtin.copy:
+    dest: "{{ api_access_token_output_path }}"
+    content: "{{ api_access_token }}\n"
+    mode: "0600"
+  when:
+    - api_access_token_result is not skipped
+    - api_access_token_output_path | length > 0
+  no_log: true
+
+- name: Display API token id (secret hidden)
+  ansible.builtin.debug:
+    msg: >-
+      Generated API token id {{ api_access_user }}@pam!apitoken
+      (secret available via the api_access_token fact; value hidden).
+  when: api_access_token_result is not skipped
+
+- name: Display completion message
+  ansible.builtin.debug:
+    msg: |
+      ============================================
+      Proxmox API access setup completed
+      ============================================
+      Linux user:  {{ api_access_user }}
+      API user:    {{ api_access_user }}@pam
+      API token:   {{ api_access_user }}@pam!apitoken
+      Role:        {{ api_access_user }}-role
+      Group:       {{ api_access_user }}-group
+      ============================================

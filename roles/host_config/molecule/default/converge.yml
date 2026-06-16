@@ -1,0 +1,17 @@
+---
+# Container smoke test: only the paths that work without a real Proxmox host
+# are enabled. Networking, CPU/SMT, storage and ACME need pvesh/hardware/DNS
+# and are exercised against a live node, not here.
+- name: Converge
+  hosts: all
+  become: true
+  vars:
+    host_config_disable_ha: true            # HA units absent → failed_when:false no-op
+    host_config_lxc_apparmor_fix: true      # no stub profiles present → empty loops
+    host_config_manage_cpu: false
+    host_config_manage_storage: false
+    host_config_manage_networking: false
+    host_config_acme_enabled: false
+    host_config_tmp_exec_override: false
+  roles:
+    - role: host_config

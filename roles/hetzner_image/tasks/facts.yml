@@ -1,0 +1,72 @@
+---
+# Ported from Regularmusic/iac tasks/network_facts.yml and the hetzner.yml
+# pre_tasks. Gathers/computes the network facts the install + configure phases
+# depend on, detects whether Proxmox is already installed, and verifies the
+# host is in rescue mode before a fresh install. Keeping the fact-gathering
+# inside the role makes it self-contained (no external pre_tasks required).
+
+# ---- Detect prior install + verify rescue mode ----
+
+- name: Check if Proxmox is already installed
+  ansible.builtin.stat:
+    path: /usr/bin/pvesh
+  register: hetzner_image_installed
+
+- name: Verify server is in rescue mode before installation
+  ansible.builtin.fail:
+    msg: >-
+      Server is not in rescue mode and Proxmox is not installed.
+      Boot into rescue mode via Hetzner Robot web UI before running this role.
+  when:
+    - not hetzner_image_installed.stat.exists
+    - (ansible_hostname | default('')) != 'rescue'
+
+- name: Skip installation if Proxmox already installed
+  ansible.builtin.debug:
+    msg: "Proxmox VE is already installed, skipping installation steps"
+  when: hetzner_image_installed.stat.exists
+
+# ---- Network facts ----
+
+- name: Gather network facts
+  ansible.builtin.setup:
+    gather_subset: network
+
+- name: Predict real network interface name
+  ansible.builtin.shell: |
+    set -o pipefail
+    if [ -x /root/.oldroot/nfs/install/util/predict_network_interface_names.sh ]; then
+      /root/.oldroot/nfs/install/util/predict_network_interface_names.sh | grep "{{ ansible_default_ipv4.interface }}" | awk -F' -> ' '{print $2}'
+    else
+      echo "{{ ansible_default_ipv4.interface }}"
+    fi
+  args:
+    executable: /bin/bash
+  register: hetzner_image_predicted_nic
+  changed_when: false
+
+- name: Set network facts
+  ansible.builtin.set_fact:
+    hetzner_image_default_interface: "{{ hetzner_image_predicted_nic.stdout | trim | default(ansible_default_ipv4.interface, true) }}"
+    hetzner_image_main_ipv4: "{{ ansible_default_ipv4.address }}"
+    hetzner_image_main_ipv4_cidr: "{{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.prefix }}"
+    hetzner_image_main_ipv4_netmask: "{{ ansible_default_ipv4.netmask }}"
+    hetzner_image_main_ipv4_broadcast: "{{ ansible_default_ipv4.broadcast | default('') }}"
+    hetzner_image_main_ipv4_gw: "{{ ansible_default_ipv4.gateway }}"
+    hetzner_image_mac_address: "{{ ansible_facts[ansible_default_ipv4.interface]['macaddress'] }}"
+
+- name: Set IPv6 facts (if available)
+  ansible.builtin.set_fact:
+    hetzner_image_main_ipv6: "{{ ansible_default_ipv6.address | default('') }}"
+    hetzner_image_ipv6_cidr: "{{ ansible_default_ipv6.address | default('') }}/{{ ansible_default_ipv6.prefix | default('') }}"
+  when: ansible_default_ipv6 is defined
+
+- name: Calculate private network facts
+  ansible.builtin.set_fact:
+    hetzner_image_private_cidr: "{{ hetzner_image_private_subnet.split('/')[0].split('.')[:-1] | join('.') }}"
+    hetzner_image_private_ip: "{{ hetzner_image_private_subnet.split('/')[0].split('.')[:-1] | join('.') }}.1"
+    hetzner_image_subnet_mask: "{{ hetzner_image_private_subnet.split('/')[1] }}"
+
+- name: Set private IP CIDR
+  ansible.builtin.set_fact:
+    hetzner_image_private_ip_cidr: "{{ hetzner_image_private_ip }}/{{ hetzner_image_subnet_mask }}"

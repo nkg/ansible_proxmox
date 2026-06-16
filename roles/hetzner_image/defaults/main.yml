@@ -1,0 +1,136 @@
+---
+# defaults file for nkg.proxmox.hetzner_image
+# Ported from Regularmusic/iac proxmox_prereqs / proxmox_install /
+# proxmox_configure / proxmox_post.
+#
+# This role provisions Proxmox VE onto a Hetzner dedicated server booted in
+# RESCUE MODE via the QEMU autoinstall flow. It is DESTRUCTIVE — it wipes the
+# disks listed in hetzner_image_disks.
+#
+# The variables with empty / placeholder defaults below are REQUIRED — set
+# them for your environment (see meta/argument_specs.yml and README.md).
+
+# --- Required identity / install inputs (no usable default) ---
+# Host disk device paths to install onto, e.g. [/dev/nvme0n1, /dev/nvme1n1].
+hetzner_image_disks: []
+# Proxmox node hostname.
+hetzner_image_hostname: ""
+# Hashed root password for the installer (e.g. from `openssl passwd -6`).
+hetzner_image_root_password_hashed: ""
+# SSH public key deployed to root (interactive access).
+hetzner_image_ssh_public_key: ""
+# SSH public key deployed to the admin/automation user. Defaults to the same
+# key as root; override if you use a separate automation key.
+hetzner_image_admin_ssh_public_key: "{{ hetzner_image_ssh_public_key }}"
+# Admin contact email (installer mailto).
+hetzner_image_email: ""
+
+# --- Installer answer.toml options ---
+hetzner_image_keyboard: en-gb
+hetzner_image_country: gb
+hetzner_image_timezone: UTC
+hetzner_image_domain: local
+hetzner_image_filesystem: zfs
+hetzner_image_zfs_raid: raid1
+
+# --- Admin user / Proxmox API (used by first-boot.sh) ---
+hetzner_image_admin_user: iac
+hetzner_image_local_storage_content: "iso,vztmpl,snippets,backup,import"
+hetzner_image_admin_role_privileges:
+  - Datastore.Allocate
+  - Datastore.AllocateSpace
+  - Datastore.AllocateTemplate
+  - Datastore.Audit
+  - Datastore.Read
+  - Group.Allocate
+  - Mapping.Audit
+  - Mapping.Modify
+  - Mapping.Use
+  - Permissions.Modify
+  - Pool.Allocate
+  - Pool.Audit
+  - Realm.Allocate
+  - Realm.AllocateUser
+  - SDN.Allocate
+  - SDN.Audit
+  - SDN.Use
+  - Sys.AccessNetwork
+  - Sys.Audit
+  - Sys.Console
+  - Sys.Incoming
+  - Sys.Modify
+  - Sys.PowerMgmt
+  - Sys.Syslog
+  - User.Modify
+  - VM.Allocate
+  - VM.Audit
+  - VM.Backup
+  - VM.Clone
+  - VM.Config.CDROM
+  - VM.Config.CPU
+  - VM.Config.Cloudinit
+  - VM.Config.Disk
+  - VM.Config.HWType
+  - VM.Config.Memory
+  - VM.Config.Network
+  - VM.Config.Options
+  - VM.Console
+  - VM.GuestAgent.Audit
+  - VM.GuestAgent.FileRead
+  - VM.GuestAgent.FileSystemMgmt
+  - VM.GuestAgent.FileWrite
+  - VM.GuestAgent.Unrestricted
+  - VM.Migrate
+  - VM.PowerMgmt
+  - VM.Replicate
+  - VM.Snapshot
+  - VM.Snapshot.Rollback
+
+# --- ISO source / destinations ---
+hetzner_image_iso_base_url: "https://enterprise.proxmox.com/iso"
+hetzner_image_iso_dest: /root/pve.iso
+hetzner_image_autoinstall_iso_dest: /root/pve-autoinstall.iso
+
+# --- QEMU settings for the install + configure phases ---
+hetzner_image_qemu:
+  cpus: 4
+  memory: 4096
+  ssh_port: 5555
+  install_timeout: 3600
+  config_timeout: 3600
+  # Temporary root password for the QEMU staging VM (configure phase SSH).
+  password: ""
+
+# --- Networking inside the installed Proxmox ---
+# Private/NAT bridge subnet (CIDR) — also used to derive private bridge IP.
+hetzner_image_private_subnet: "10.10.10.0/24"
+# DNS resolvers written to /etc/resolv.conf inside the guest.
+hetzner_image_dns_servers: []
+# systemd services disabled after install (single-node, no HA).
+hetzner_image_disabled_services:
+  - rpcbind
+  - rpcbind.socket
+# Optional Hetzner-style secondary IP routed through vmbr0.
+hetzner_image_hetzner_secondary_ip: ""
+
+# --- API token capture (post phase) ---
+# Capture the token first-boot.sh writes to /root/token and expose it as the
+# hetzner_image_api_token fact for the calling playbook to store.
+hetzner_image_capture_token: true
+# Optional controller-side path to also write the token secret to (mode 0600).
+# Empty = only expose the fact.
+hetzner_image_token_output_path: ""
+# Delete /root/token from the host after capturing it.
+hetzner_image_remove_token_after_capture: false
+
+# --- Cleanup ---
+hetzner_image_cleanup_files:
+  - /root/pve.iso
+  - /root/pve-autoinstall.iso
+  - /root/answer.toml
+  - /root/first-boot.sh
+
+# --- Debug / VNC (opt-in) ---
+hetzner_image_debug: false
+hetzner_image_debug_vnc_display: ":1"
+hetzner_image_debug_monitor_port: 4444

@@ -1,0 +1,376 @@
+---
+# Ported from Regularmusic/iac proxmox_configure.
+# Boot the installed Proxmox in QEMU with SSH port forwarding, configure
+# networking/hostname/sysctl via SSH, then shut down.
+
+# ---- Cleanup stale QEMU from previous runs ----
+
+- name: Kill any stale QEMU processes from previous runs
+  ansible.builtin.shell: |
+    pkill -f '[q]emu-system-x86_64.*hostfwd=tcp::{{ hetzner_image_qemu.ssh_port }}' || true
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Wait for stale QEMU port to be released
+  ansible.builtin.wait_for:
+    host: localhost
+    port: "{{ hetzner_image_qemu.ssh_port }}"
+    state: stopped
+    timeout: 15
+  failed_when: false
+
+# ---- Start QEMU with SSH forwarding ----
+
+- name: Start QEMU with port forwarding for configuration
+  ansible.builtin.shell: |
+    set -euo pipefail
+    qemu-system-x86_64 \
+        -enable-kvm \
+        {{ hetzner_image_qemu_uefi_args }} \
+        -cpu host \
+        -smp {{ hetzner_image_qemu.cpus }} \
+        -m {{ hetzner_image_qemu.memory }} \
+        -device e1000,netdev=net0,bus=pci.0,addr=0x05 \
+        -netdev user,id=net0,hostfwd=tcp::{{ hetzner_image_qemu.ssh_port }}-:22 \
+        {{ hetzner_image_qemu_drive_args }} \
+        {{ hetzner_image_qemu_display_args }} \
+        -serial stdio > /root/qemu_config.log 2>&1
+  args:
+    executable: /bin/bash
+  async: "{{ hetzner_image_qemu.config_timeout }}"
+  poll: 0
+  register: hetzner_image_configure_job
+  changed_when: true
+
+- name: Display VNC connection info (config phase)
+  vars:
+    hetzner_image_vnc_port: "{{ 5900 + (hetzner_image_debug_vnc_display | replace(':', '') | int) }}"
+  ansible.builtin.debug:
+    msg: |
+      ============================================
+      DEBUG MODE: VNC enabled for config phase
+      ============================================
+      VNC is bound to localhost on the server.
+      Open an SSH tunnel, then connect your VNC client:
+
+        ssh -L {{ hetzner_image_vnc_port }}:127.0.0.1:{{ hetzner_image_vnc_port }} root@{{ hetzner_image_main_ipv4 }}
+
+      Monitor: ssh {{ hetzner_image_main_ipv4 }} 'nc 127.0.0.1 {{ hetzner_image_debug_monitor_port }}'
+      ============================================
+  when: hetzner_image_debug | default(false) | bool
+
+# ---- Register QEMU VM as a temporary Ansible host ----
+# Done before the block so wait_for_connection can use Ansible's password auth
+
+- name: Wait for SSH port to open on QEMU VM
+  ansible.builtin.wait_for:
+    host: localhost
+    port: "{{ hetzner_image_qemu.ssh_port }}"
+    delay: 45
+    timeout: 600
+
+- name: Capture QEMU monitor screendump (debug)
+  ansible.builtin.shell: |
+    python3 -c "
+    import socket, time
+    s = socket.socket()
+    s.settimeout(3)
+    try:
+        s.connect(('127.0.0.1', {{ hetzner_image_debug_monitor_port }}))
+        time.sleep(0.5)
+        s.recv(4096)
+        s.send(b'screendump /tmp/qemu_screen.ppm\n')
+        time.sleep(1)
+        s.close()
+    except: pass
+    "
+    exit 0
+  args:
+    executable: /bin/bash
+  changed_when: false
+  failed_when: false
+  when: hetzner_image_debug | default(false) | bool
+
+- name: Probe SSH port connectivity
+  ansible.builtin.shell: |
+    set -o pipefail
+    echo "SSH port probe at $(date):"
+    ss -tlnp | grep ':{{ hetzner_image_qemu.ssh_port }}' || echo "Port {{ hetzner_image_qemu.ssh_port }} not in ss output"
+    echo "---"
+    timeout 5 bash -c 'echo | nc -w3 localhost {{ hetzner_image_qemu.ssh_port }}' 2>&1 | strings | head -1 || echo "nc connect failed"
+  args:
+    executable: /bin/bash
+  register: hetzner_image_configure_ssh_probe
+  changed_when: false
+  failed_when: false
+
+- name: Show SSH probe result
+  ansible.builtin.debug:
+    msg: "{{ hetzner_image_configure_ssh_probe.stdout_lines | default([]) }}"
+
+- name: Remove stale SSH host key for QEMU VM
+  ansible.builtin.known_hosts:
+    name: "[{{ hetzner_image_main_ipv4 }}]:{{ hetzner_image_qemu.ssh_port }}"
+    state: absent
+
+- name: Add QEMU VM as temporary host
+  ansible.builtin.add_host:
+    name: hetzner_image_staging
+    ansible_host: "{{ hetzner_image_main_ipv4 }}"
+    ansible_port: "{{ hetzner_image_qemu.ssh_port }}"
+    ansible_user: root
+    ansible_password: "{{ hetzner_image_qemu.password }}"
+    ansible_ssh_common_args: >-
+      -o StrictHostKeyChecking=no
+      -o UserKnownHostsFile=/dev/null
+      -o ConnectTimeout=30
+    # Pass through variables needed by delegated tasks
+    hetzner_image_hostname: "{{ hetzner_image_hostname }}"
+    hetzner_image_domain: "{{ hetzner_image_domain | default('local') }}"
+    hetzner_image_dns_servers: "{{ hetzner_image_dns_servers }}"
+    hetzner_image_disabled_services: "{{ hetzner_image_disabled_services }}"
+    hetzner_image_private_subnet: "{{ hetzner_image_private_subnet }}"
+    hetzner_image_main_ipv4: "{{ hetzner_image_main_ipv4 }}"
+    hetzner_image_main_ipv4_cidr: "{{ hetzner_image_main_ipv4_cidr }}"
+    hetzner_image_main_ipv4_netmask: "{{ hetzner_image_main_ipv4_netmask }}"
+    hetzner_image_main_ipv4_broadcast: "{{ hetzner_image_main_ipv4_broadcast }}"
+    hetzner_image_main_ipv4_gw: "{{ hetzner_image_main_ipv4_gw }}"
+    hetzner_image_hetzner_secondary_ip: "{{ hetzner_image_hetzner_secondary_ip | default('') }}"
+    hetzner_image_main_ipv6: "{{ hetzner_image_main_ipv6 | default('') }}"
+    hetzner_image_ipv6_cidr: "{{ hetzner_image_ipv6_cidr | default('') }}"
+    hetzner_image_mac_address: "{{ hetzner_image_mac_address }}"
+    hetzner_image_default_interface: "{{ hetzner_image_default_interface }}"
+    hetzner_image_private_ip: "{{ hetzner_image_private_ip }}"
+    hetzner_image_private_ip_cidr: "{{ hetzner_image_private_ip_cidr }}"
+    hetzner_image_private_cidr: "{{ hetzner_image_private_cidr }}"
+    hetzner_image_ssh_public_key: "{{ hetzner_image_ssh_public_key }}"
+    hetzner_image_admin_ssh_public_key: "{{ hetzner_image_admin_ssh_public_key }}"
+    hetzner_image_admin_user: "{{ hetzner_image_admin_user }}"
+  no_log: true
+
+# ---- Configure VM inside block so we always wait for QEMU to finish ----
+
+- name: Configure Proxmox VM and ensure QEMU cleanup
+  block:
+    - name: Wait for SSH to be fully ready
+      delegate_to: hetzner_image_staging
+      ansible.builtin.wait_for_connection:
+        delay: 10
+        timeout: 300
+
+    # ---- Ensure admin user exists (definitive creation point) ----
+    # Always create the admin user here inside QEMU, before the real reboot.
+    # This guarantees the user exists regardless of whether first-boot.sh ran.
+    # All tasks are idempotent so this is safe even if first-boot already
+    # created the user.
+
+    - name: Install sudo (may be missing on fresh Proxmox)
+      delegate_to: hetzner_image_staging
+      ansible.builtin.apt:
+        name: sudo
+        state: present
+        update_cache: true
+
+    - name: Ensure admin user exists
+      ansible.builtin.include_tasks:
+        file: admin_user.yml
+        apply:
+          delegate_to: hetzner_image_staging
+
+    - name: Confirm admin user is ready for post-reboot access
+      delegate_to: hetzner_image_staging
+      ansible.builtin.command: id {{ hetzner_image_admin_user }}
+      register: hetzner_image_configure_admin_verify
+      changed_when: false
+
+    - name: Show admin user status
+      ansible.builtin.debug:
+        msg: "Admin user verified: {{ hetzner_image_configure_admin_verify.stdout }}"
+
+    # ---- Configure the Proxmox VM via delegation ----
+
+    - name: Copy /etc/hosts
+      delegate_to: hetzner_image_staging
+      ansible.builtin.template:
+        src: hosts.j2
+        dest: /etc/hosts
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Copy /etc/network/interfaces
+      delegate_to: hetzner_image_staging
+      ansible.builtin.template:
+        src: interfaces.j2
+        dest: /etc/network/interfaces
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Copy sysctl configuration
+      delegate_to: hetzner_image_staging
+      ansible.builtin.template:
+        src: 99-proxmox.conf.j2
+        dest: /etc/sysctl.d/99-proxmox.conf
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Backup original sources.list
+      delegate_to: hetzner_image_staging
+      ansible.builtin.command: mv /etc/apt/sources.list /etc/apt/sources.list.bak
+      args:
+        removes: /etc/apt/sources.list
+
+    - name: Configure DNS resolvers
+      delegate_to: hetzner_image_staging
+      ansible.builtin.copy:
+        content: |
+          {% for dns in hetzner_image_dns_servers %}
+          nameserver {{ dns }}
+          {% endfor %}
+        dest: /etc/resolv.conf
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Set hostname
+      delegate_to: hetzner_image_staging
+      ansible.builtin.hostname:
+        name: "{{ hetzner_image_hostname }}"
+
+    - name: Apply sysctl settings
+      delegate_to: hetzner_image_staging
+      ansible.builtin.command: sysctl --system
+      changed_when: true
+
+    - name: Disable unnecessary services
+      delegate_to: hetzner_image_staging
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: false
+        state: stopped
+      loop: "{{ hetzner_image_disabled_services }}"
+      failed_when: false
+
+    # ---- Deploy SSH keys for post-reboot access ----
+    # Always deploy keys for both root and admin user, regardless of whether
+    # first-boot.sh ran. The Proxmox installer may create
+    # /root/.ssh/authorized_keys as a symlink that doesn't survive correctly,
+    # and first-boot.sh may fail silently. By unconditionally deploying here
+    # (inside QEMU, before the real reboot), we guarantee access after reboot.
+
+    - name: Check if root authorized_keys is a symlink
+      delegate_to: hetzner_image_staging
+      ansible.builtin.stat:
+        path: /root/.ssh/authorized_keys
+      register: hetzner_image_configure_root_authkeys
+
+    - name: Remove root authorized_keys if it is a symlink
+      delegate_to: hetzner_image_staging
+      ansible.builtin.file:
+        path: /root/.ssh/authorized_keys
+        state: absent
+      when: hetzner_image_configure_root_authkeys.stat.islnk | default(false)
+
+    - name: Deploy SSH authorized key for root
+      delegate_to: hetzner_image_staging
+      ansible.posix.authorized_key:
+        user: root
+        key: "{{ hetzner_image_ssh_public_key }}"
+        state: present
+
+    - name: Deploy SSH authorized key for admin user
+      delegate_to: hetzner_image_staging
+      ansible.posix.authorized_key:
+        user: "{{ hetzner_image_admin_user }}"
+        key: "{{ hetzner_image_ssh_public_key }}"
+        state: present
+
+    # ---- Graceful shutdown ----
+
+    - name: Shutdown Proxmox VM
+      delegate_to: hetzner_image_staging
+      ansible.builtin.command: poweroff
+      async: 10
+      poll: 0
+      changed_when: true
+      failed_when: false
+
+  rescue:
+    - name: Record configuration failure
+      ansible.builtin.set_fact:
+        hetzner_image_configure_failed: true
+        hetzner_image_configure_error: >-
+          {{ ansible_failed_task.name | default('unknown task') }}:
+          {{ ansible_failed_result.msg | default(ansible_failed_result | default('unknown error')) }}
+
+    - name: Log configuration error
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          CONFIGURATION FAILED
+          ============================================
+          Task:  {{ ansible_failed_task.name | default('unknown') }}
+          Error: {{ ansible_failed_result.msg | default(ansible_failed_result | default('unknown error')) }}
+          ============================================
+          Attempting to stop QEMU process before failing...
+
+    - name: Force kill QEMU if still running after failure
+      ansible.builtin.shell: |
+        pkill -f '[q]emu-system-x86_64.*hostfwd=tcp::{{ hetzner_image_qemu.ssh_port }}' || true
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+  always:
+    # ---- Always wait for QEMU to finish ----
+
+    - name: Wait for QEMU process to exit
+      ansible.builtin.async_status:
+        jid: "{{ hetzner_image_configure_job.ansible_job_id }}"
+      register: hetzner_image_configure_result
+      until: hetzner_image_configure_result.finished
+      retries: 120
+      delay: 5
+      failed_when: false
+      when: hetzner_image_configure_job.ansible_job_id is defined
+
+    - name: Verify QEMU has fully stopped
+      ansible.builtin.wait_for:
+        host: localhost
+        port: "{{ hetzner_image_qemu.ssh_port }}"
+        state: stopped
+        timeout: 60
+
+    - name: Log QEMU exit status
+      ansible.builtin.debug:
+        msg: >-
+          QEMU config process finished={{ hetzner_image_configure_result.finished | default('unknown') }},
+          rc={{ hetzner_image_configure_result.rc | default('N/A') }}
+      when: hetzner_image_configure_result is defined
+
+    - name: Display QEMU log on failure
+      ansible.builtin.shell: |
+        set -o pipefail
+        tail -50 /root/qemu_config.log 2>/dev/null | strings | iconv -f utf-8 -t utf-8 -c | head -50
+      args:
+        executable: /bin/bash
+      register: hetzner_image_configure_log_tail
+      changed_when: false
+      failed_when: false
+      when: hetzner_image_configure_failed | default(false) or (hetzner_image_configure_result.rc | default(0)) != 0
+
+    - name: Show QEMU log output
+      ansible.builtin.debug:
+        msg: "{{ hetzner_image_configure_log_tail.stdout_lines | default([]) }}"
+      when:
+        - hetzner_image_configure_log_tail is defined
+        - hetzner_image_configure_log_tail is not skipped
+        - (hetzner_image_configure_log_tail.stdout_lines | default([])) | length > 0
+
+    - name: Fail playbook if configuration was unsuccessful
+      ansible.builtin.fail:
+        msg: "QEMU configuration phase failed. Check errors above and /root/qemu_config.log on the target."
+      when: hetzner_image_configure_failed | default(false)

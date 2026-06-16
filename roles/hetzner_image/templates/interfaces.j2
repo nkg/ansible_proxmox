@@ -1,0 +1,40 @@
+# {{ ansible_managed }}
+# Proxmox VE network configuration for Hetzner dedicated server
+
+auto lo
+iface lo inet loopback
+
+iface {{ hetzner_image_default_interface }} inet manual
+
+auto vmbr0
+iface vmbr0 inet static
+    address {{ hetzner_image_main_ipv4 }}
+    netmask {{ hetzner_image_main_ipv4_netmask }}
+    gateway {{ hetzner_image_main_ipv4_gw }}
+    broadcast {{ hetzner_image_main_ipv4_broadcast }}
+    bridge-ports {{ hetzner_image_default_interface }}
+    bridge-stp off
+    bridge-fd 0
+    # Hetzner requires proxy_arp for additional IP routing
+    post-up echo 1 > /proc/sys/net/ipv4/ip_forward
+    post-up echo 1 > /proc/sys/net/ipv4/conf/vmbr0/proxy_arp
+    post-up echo 1 > /proc/sys/net/ipv4/conf/{{ hetzner_image_default_interface }}/proxy_arp
+{% if hetzner_image_hetzner_secondary_ip | default('') | length > 0 %}
+    post-up ip route add {{ hetzner_image_hetzner_secondary_ip }}/32 dev vmbr0
+{% endif %}
+{% if hetzner_image_main_ipv6 | default('') | length > 0 %}
+
+iface vmbr0 inet6 static
+    address {{ hetzner_image_ipv6_cidr }}
+    gateway fe80::1
+{% endif %}
+
+# Private/NAT bridge for internal VM network
+auto vmbr1
+iface vmbr1 inet static
+    address {{ hetzner_image_private_ip_cidr }}
+    bridge-ports none
+    bridge-stp off
+    bridge-fd 0
+    post-up   iptables -t nat -A POSTROUTING -s '{{ hetzner_image_private_subnet }}' -o vmbr0 -j MASQUERADE
+    post-down iptables -t nat -D POSTROUTING -s '{{ hetzner_image_private_subnet }}' -o vmbr0 -j MASQUERADE

@@ -1,0 +1,16 @@
+---
+# Container smoke test. The pve/Debian repo lines need the Proxmox archive key
+# and would break `apt update` on a plain Debian image, so repo management is
+# turned off here — this exercises the subscription-nag handling, which is the
+# container-safe part of the role.
+- name: Converge
+  hosts: all
+  become: true
+  vars:
+    repos_use_enterprise: false
+    repos_no_subscription: false
+    repos_ceph_enabled: false
+    repos_remove_subscription_nag: true   # JS file absent → patch skips; APT hook installed
+    repos_update_cache: false
+  roles:
+    - role: repos

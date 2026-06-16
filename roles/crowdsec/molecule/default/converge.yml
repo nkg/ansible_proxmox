@@ -1,0 +1,32 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  vars:
+    crowdsec_target: "host"
+    crowdsec_firewall: "nftables"
+    # Skip binary installation — the tarball ships amd64 binaries; molecule may
+    # run on a different host arch, and we don't want a network dep in CI.
+    crowdsec_skip_install: true
+    crowdsec_install_bouncer: false
+    # Skip Hub-dependent installs to avoid an external dependency in CI.
+    crowdsec_collections: []
+    crowdsec_scenarios: []
+    crowdsec_parsers: []
+    crowdsec_postoverflows: []
+    crowdsec_ban_duration: "duration: 4h"
+    crowdsec_prometheus_enabled: "enabled: true"
+    crowdsec_acquis_config: |
+      ---
+      source: journalctl
+      journalctl_filter:
+        - "_SYSTEMD_UNIT=ssh.service"
+      labels:
+        type: sshd
+    crowdsec_whitelist_ips:
+      - "192.168.1.1"
+    crowdsec_whitelist_cidrs:
+      - "10.0.0.0/8"
+      - "172.16.0.0/12"
+  roles:
+    - role: crowdsec

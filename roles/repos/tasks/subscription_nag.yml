@@ -1,0 +1,39 @@
+---
+# Removes the "No valid subscription" dialog from the Proxmox web UI.
+#
+# Two mechanisms, ported from Regularmusic/iac proxmox_setup:
+#   1. An immediate one-off patch of proxmoxlib.js so the current install stops
+#      nagging without waiting for the next package upgrade.
+#   2. A DPkg::Post-Invoke APT hook (no-nag-script) that re-applies the patch
+#      automatically every time proxmox-widget-toolkit is upgraded — the JS
+#      patch alone is reverted by such upgrades.
+
+- name: Check if the widget toolkit is present
+  ansible.builtin.stat:
+    path: "{{ repos_widget_toolkit_path }}"
+  register: repos_widget_toolkit_file
+
+- name: Check if the subscription popup is already patched
+  ansible.builtin.command:
+    cmd: "grep -q 'void({' {{ repos_widget_toolkit_path }}"
+  register: repos_popup_check
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: repos_widget_toolkit_file.stat.exists
+
+- name: Disable the Proxmox subscription popup
+  ansible.builtin.replace:
+    path: "{{ repos_widget_toolkit_path }}"
+    regexp: "^(.*)Ext\\.Msg\\.show\\(\\{(.*)$\\n^(.*)No valid subscription(.*)$"
+    replace: "\\1void({\\2\\n\\3No valid subscription\\4"
+  when:
+    - repos_widget_toolkit_file.stat.exists
+    - repos_popup_check.rc != 0
+
+- name: Install the subscription nag removal APT hook
+  ansible.builtin.copy:
+    src: no-nag-script
+    dest: "{{ repos_no_nag_script_dest }}"
+    mode: "0644"
+    force: true

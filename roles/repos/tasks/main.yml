@@ -1,0 +1,44 @@
+---
+# tasks file for nkg.proxmox.repos
+#
+# Manages the Proxmox VE APT repositories: switches between the enterprise and
+# the free no-subscription repos, optionally enables Ceph, and removes the web
+# UI subscription nag.
+#
+# TODO: port concrete tasks from Regularmusic/iac proxmox_setup once its
+# outstanding PRs are merged. Stubs below define the intended structure.
+
+- name: Configure the Proxmox VE enterprise repository
+  ansible.builtin.apt_repository:
+    repo: "deb https://enterprise.proxmox.com/debian/pve {{ repos_debian_suite }} pve-enterprise"
+    filename: pve-enterprise
+    state: "{{ 'present' if repos_use_enterprise else 'absent' }}"
+    update_cache: false
+  tags: [repos, enterprise]
+
+- name: Configure the Proxmox VE no-subscription repository
+  ansible.builtin.apt_repository:
+    repo: "deb http://download.proxmox.com/debian/pve {{ repos_debian_suite }} pve-no-subscription"
+    filename: pve-no-subscription
+    state: "{{ 'present' if repos_no_subscription else 'absent' }}"
+    update_cache: false
+  tags: [repos, no-subscription]
+
+- name: Configure the Ceph no-subscription repository
+  ansible.builtin.apt_repository:
+    repo: "deb http://download.proxmox.com/debian/ceph-{{ repos_ceph_release }} {{ repos_debian_suite }} no-subscription"
+    filename: ceph
+    state: "{{ 'present' if repos_ceph_enabled else 'absent' }}"
+    update_cache: false
+  tags: [repos, ceph]
+
+- name: Remove the web UI subscription nag
+  ansible.builtin.include_tasks: subscription_nag.yml
+  when: repos_remove_subscription_nag | bool
+  tags: [repos, nag]
+
+- name: Update the APT cache
+  ansible.builtin.apt:
+    update_cache: true
+  when: repos_update_cache | bool
+  tags: [repos]

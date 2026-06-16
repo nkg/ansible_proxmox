@@ -1,0 +1,153 @@
+---
+# Ported from Regularmusic/iac proxmox_prereqs.
+# Install packages, download the Proxmox ISO, and build the unattended
+# autoinstall ISO (answer.toml + first-boot.sh).
+
+- name: Add Proxmox repository
+  ansible.builtin.copy:
+    content: "deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription"
+    dest: /etc/apt/sources.list.d/pve.list
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Add Proxmox GPG key
+  ansible.builtin.get_url:
+    url: https://enterprise.proxmox.com/debian/proxmox-release-bookworm.gpg
+    dest: /etc/apt/trusted.gpg.d/proxmox-release-bookworm.gpg
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Update package cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install required packages
+  ansible.builtin.apt:
+    name:
+      - proxmox-auto-install-assistant
+      - xorriso
+      - ovmf
+      - wget
+      - qemu-system-x86
+      - qemu-kvm
+      - netcat-openbsd
+    state: present
+
+- name: Locate OVMF firmware
+  ansible.builtin.find:
+    paths:
+      - /usr/share/ovmf
+      - /usr/share/OVMF
+      - /usr/share/edk2/ovmf
+    patterns: "OVMF*.fd"
+    recurse: false
+  register: hetzner_image_ovmf_files
+
+- name: Fail if no OVMF firmware found
+  ansible.builtin.fail:
+    msg: >-
+      No OVMF firmware found. Ensure the 'ovmf' package is installed.
+      Searched: /usr/share/ovmf, /usr/share/OVMF, /usr/share/edk2/ovmf
+  when: hetzner_image_ovmf_files.matched == 0
+
+- name: Set OVMF firmware path
+  ansible.builtin.set_fact:
+    hetzner_image_ovmf_path: "{{ (hetzner_image_ovmf_files.files | sort(attribute='path') | first).path }}"
+
+- name: Display detected OVMF path
+  ansible.builtin.debug:
+    msg: "Using OVMF firmware: {{ hetzner_image_ovmf_path }}"
+
+# ---- ISO Download ----
+
+- name: Check if Proxmox ISO exists
+  ansible.builtin.stat:
+    path: "{{ hetzner_image_iso_dest }}"
+  register: hetzner_image_iso_exists
+
+- name: Get latest Proxmox VE ISO URL
+  ansible.builtin.uri:
+    url: "{{ hetzner_image_iso_base_url }}/"
+    method: GET
+    return_content: true
+  register: hetzner_image_iso_page
+  when: not hetzner_image_iso_exists.stat.exists
+
+- name: Extract latest ISO filename
+  ansible.builtin.set_fact:
+    hetzner_image_latest_iso: "{{ hetzner_image_iso_page.content | regex_findall('proxmox-ve_[0-9]+\\.[0-9]+-[0-9]+\\.iso') | sort | last }}"
+  when: not hetzner_image_iso_exists.stat.exists
+
+- name: Display ISO to download
+  ansible.builtin.debug:
+    msg: "Downloading: {{ hetzner_image_iso_base_url }}/{{ hetzner_image_latest_iso }}"
+  when: not hetzner_image_iso_exists.stat.exists
+
+- name: Fetch SHA256SUMS from Proxmox ISO mirror
+  ansible.builtin.uri:
+    url: "{{ hetzner_image_iso_base_url }}/SHA256SUMS"
+    method: GET
+    return_content: true
+  register: hetzner_image_sha256sums
+  when: not hetzner_image_iso_exists.stat.exists
+
+- name: Extract checksum for ISO
+  ansible.builtin.set_fact:
+    hetzner_image_checksum: >-
+      {{ hetzner_image_sha256sums.content
+      | regex_search('([a-f0-9]{64})\s+' ~ hetzner_image_latest_iso, '\1')
+      | first }}
+  when: not hetzner_image_iso_exists.stat.exists
+
+- name: Download latest Proxmox VE ISO
+  ansible.builtin.get_url:
+    url: "{{ hetzner_image_iso_base_url }}/{{ hetzner_image_latest_iso }}"
+    dest: "{{ hetzner_image_iso_dest }}"
+    checksum: "sha256:{{ hetzner_image_checksum }}"
+    owner: root
+    group: root
+    mode: "0644"
+    timeout: 1800
+  when: not hetzner_image_iso_exists.stat.exists
+
+# ---- Autoinstall ISO ----
+
+- name: Create answer.toml for automated installation
+  ansible.builtin.template:
+    src: answer.toml.j2
+    dest: /root/answer.toml
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Create first-boot script (admin user setup)
+  ansible.builtin.template:
+    src: first-boot.sh.j2
+    dest: /root/first-boot.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Check if autoinstall ISO exists
+  ansible.builtin.stat:
+    path: "{{ hetzner_image_autoinstall_iso_dest }}"
+  register: hetzner_image_autoinstall_exists
+
+- name: Create autoinstall ISO
+  ansible.builtin.command: >
+    proxmox-auto-install-assistant prepare-iso {{ hetzner_image_iso_dest }}
+    --fetch-from iso
+    --answer-file /root/answer.toml
+    --on-first-boot /root/first-boot.sh
+    --output {{ hetzner_image_autoinstall_iso_dest }}
+  args:
+    creates: "{{ hetzner_image_autoinstall_iso_dest }}"
+  when: not hetzner_image_autoinstall_exists.stat.exists
+
+- name: Check if system supports UEFI
+  ansible.builtin.stat:
+    path: /sys/firmware/efi
+  register: hetzner_image_uefi_support

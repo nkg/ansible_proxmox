@@ -1,0 +1,96 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  tasks:
+    # --- Prerequisites ---
+    - name: Verify prerequisite packages installed
+      ansible.builtin.command: "dpkg -l {{ item }}"
+      loop:
+        - nftables
+        - gettext-base
+      register: prereq_result
+      changed_when: false
+      failed_when: prereq_result.rc != 0
+
+    # --- Packagecloud cleanup ---
+    - name: Verify packagecloud repo is removed
+      ansible.builtin.stat:
+        path: /etc/apt/sources.list.d/crowdsec_crowdsec.list
+      register: packagecloud_repo
+
+    - name: Assert packagecloud repo does not exist
+      ansible.builtin.assert:
+        that:
+          - not packagecloud_repo.stat.exists
+        fail_msg: "Stale packagecloud repo config still present"
+
+    # --- Configuration directories ---
+    - name: Check CrowdSec config directories exist
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/crowdsec
+        - /etc/crowdsec/acquis.d
+        - /etc/crowdsec/parsers/s02-enrich
+      register: config_dirs
+
+    - name: Assert config directories exist
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.isdir
+        fail_msg: "Config directory {{ item.item }} not found"
+      loop: "{{ config_dirs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # --- Configuration files ---
+    - name: Check acquisition config exists
+      ansible.builtin.stat:
+        path: /etc/crowdsec/acquis.d/custom.yaml
+      register: acquis_config
+
+    - name: Assert acquisition config exists
+      ansible.builtin.assert:
+        that:
+          - acquis_config.stat.exists
+        fail_msg: "CrowdSec acquisition config not found"
+
+    - name: Read acquisition config
+      ansible.builtin.slurp:
+        src: /etc/crowdsec/acquis.d/custom.yaml
+      register: acquis_content
+
+    - name: Verify acquisition config content
+      ansible.builtin.assert:
+        that:
+          - "'journalctl' in (acquis_content.content | b64decode)"
+          - "'ssh.service' in (acquis_content.content | b64decode)"
+          - "'sshd' in (acquis_content.content | b64decode)"
+        fail_msg: "Acquisition config content is incorrect"
+
+    # --- Whitelist configuration ---
+    - name: Check whitelist config exists
+      ansible.builtin.stat:
+        path: /etc/crowdsec/parsers/s02-enrich/whitelist.yaml
+      register: whitelist_config
+
+    - name: Assert whitelist config exists
+      ansible.builtin.assert:
+        that:
+          - whitelist_config.stat.exists
+        fail_msg: "CrowdSec whitelist config not found"
+
+    - name: Read whitelist config
+      ansible.builtin.slurp:
+        src: /etc/crowdsec/parsers/s02-enrich/whitelist.yaml
+      register: whitelist_content
+
+    - name: Verify whitelist contains expected IPs and CIDRs
+      ansible.builtin.assert:
+        that:
+          - "'192.168.1.1' in (whitelist_content.content | b64decode)"
+          - "'10.0.0.0/8' in (whitelist_content.content | b64decode)"
+          - "'172.16.0.0/12' in (whitelist_content.content | b64decode)"
+        fail_msg: "Whitelist config is missing expected IPs/CIDRs"

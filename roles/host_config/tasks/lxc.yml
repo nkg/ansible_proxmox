@@ -1,0 +1,71 @@
+---
+# LXC management prerequisites — neutralise broken AppArmor "allow" stubs.
+# Ported from Regularmusic/iac proxmox_setup lxc.yml.
+#
+# Debian Trixie / Proxmox VE 9.x ship thin AppArmor "stub" profiles for the
+# lxc-* management tools (lxc-stop, lxc-attach, lxc-create, lxc-destroy,
+# lxc-execute, lxc-unshare, lxc-usernsexec). Each merely names the process and
+# grants `userns`; it carries no file-read rules because it is meant to sit
+# effectively unconfined.
+#
+# A blanket `aa-enforce` hardening pass (e.g. konstruktoid.hardening runs
+# `find /etc/apparmor.d/ -maxdepth 1 -type f -exec aa-enforce {} \;`) flips
+# every profile — including these stubs — into ENFORCE mode. With no allow
+# rules, an enforced stub denies the binary its own shared library
+# (liblxc.so.1), breaking container reboot/create/enter. This task disables the
+# stub profiles, restoring their intended unconfined behaviour. Only needed
+# when such a hardening pass runs — hence opt-in via host_config_lxc_apparmor_fix.
+
+- name: Neutralise broken LXC AppArmor stub profiles
+  vars:
+    host_config_lxc_apparmor_stub_profiles:
+      - lxc-usernsexec
+      - lxc-stop
+      - lxc-attach
+      - lxc-create
+      - lxc-destroy
+      - lxc-execute
+      - lxc-unshare
+  block:
+    - name: Ensure /etc/apparmor.d/disable exists
+      ansible.builtin.file:
+        path: /etc/apparmor.d/disable
+        state: directory
+        mode: "0755"
+
+    - name: Stat LXC stub profiles
+      ansible.builtin.stat:
+        path: "/etc/apparmor.d/{{ item }}"
+      loop: "{{ host_config_lxc_apparmor_stub_profiles }}"
+      register: host_config_lxc_stub_stats
+
+    - name: Select the stub profiles present on this host
+      ansible.builtin.set_fact:
+        host_config_lxc_present_stubs: >-
+          {{ host_config_lxc_stub_stats.results
+             | selectattr('stat.exists')
+             | map(attribute='item') | list }}
+
+    - name: Disable present LXC stub profiles (symlink into disable/)
+      ansible.builtin.file:
+        src: "/etc/apparmor.d/{{ item }}"
+        dest: "/etc/apparmor.d/disable/{{ item }}"
+        state: link
+        force: true
+      loop: "{{ host_config_lxc_present_stubs }}"
+
+    # Unload unconditionally rather than gating on `aa-status --json`:
+    # `apparmor_parser -R` reads the declared name from the file itself, so it
+    # is immune to a future apparmor shipping qualified names. An already-
+    # unloaded profile fails with rc 254 and "Profile doesn't exist", which we
+    # treat as the clean steady-state → idempotent re-runs, yet still
+    # self-healing if an apparmor upgrade re-loaded a stub.
+    - name: Unload any loaded LXC stub profiles from the kernel
+      ansible.builtin.command: "apparmor_parser -R /etc/apparmor.d/{{ item }}"
+      loop: "{{ host_config_lxc_present_stubs }}"
+      register: host_config_aa_unload
+      failed_when: >-
+        host_config_aa_unload.rc != 0
+        and "Profile doesn't exist" not in (host_config_aa_unload.stderr | default(''))
+        and 'No such file or directory' not in (host_config_aa_unload.stderr | default(''))
+      changed_when: host_config_aa_unload.rc == 0

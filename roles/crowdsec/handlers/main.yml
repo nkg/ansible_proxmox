@@ -1,0 +1,8 @@
+---
+# handlers file for nkg.proxmox.crowdsec
+
+- name: Restart CrowdSec
+  ansible.builtin.service:
+    name: crowdsec
+    state: restarted
+  when: crowdsec_service_status.status is defined and crowdsec_service_status.status.LoadState == "loaded"

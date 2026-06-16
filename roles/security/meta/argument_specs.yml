@@ -1,0 +1,92 @@
+---
+argument_specs:
+  main:
+    short_description: Apply konstruktoid.hardening with Proxmox-safe overrides.
+    options:
+      security_apply_hardening:
+        type: bool
+        default: true
+        description: Master switch; set false to skip hardening entirely.
+      security_ssh_port:
+        type: int
+        default: 22
+        description: SSH port konstruktoid should bind and allow.
+      security_manage_ufw:
+        type: bool
+        default: false
+        description: Let konstruktoid manage UFW (off — conflicts with Proxmox bridges).
+      security_manage_resolved:
+        type: bool
+        default: false
+        description: Let konstruktoid manage systemd-resolved (off — unused on Proxmox).
+      security_manage_timesyncd:
+        type: bool
+        default: false
+        description: Let konstruktoid manage systemd-timesyncd (off — Proxmox uses chrony).
+      security_manage_aide:
+        type: bool
+        default: true
+        description: Let konstruktoid install/manage AIDE.
+      security_manage_auditd:
+        type: bool
+        default: false
+        description: Let konstruktoid manage auditd (off — version conflict on Trixie).
+      security_disable_wireless:
+        type: bool
+        default: false
+        description: Let konstruktoid disable wireless interfaces.
+      security_disable_root_account:
+        type: bool
+        default: false
+        description: Let konstruktoid disable the root account (off — Proxmox GUI needs root PAM).
+      security_sshd_password_authentication:
+        type: bool
+        default: false
+        description: sshd PasswordAuthentication.
+      security_sshd_permit_root_login:
+        type: str
+        default: "no"
+        description: sshd PermitRootLogin.
+      security_sshd_use_dns:
+        type: bool
+        default: false
+        description: sshd UseDNS.
+      security_sshd_max_auth_tries:
+        type: int
+        default: 3
+        description: sshd MaxAuthTries.
+      security_sshd_max_sessions:
+        type: int
+        default: 3
+        description: sshd MaxSessions.
+      security_sshd_client_alive_interval:
+        type: int
+        default: 300
+        description: sshd ClientAliveInterval.
+      security_sshd_client_alive_count_max:
+        type: int
+        default: 2
+        description: sshd ClientAliveCountMax.
+      security_sshd_login_grace_time:
+        type: int
+        default: 30
+        description: sshd LoginGraceTime.
+      security_sshd_allow_tcp_forwarding:
+        type: bool
+        default: true
+        description: sshd AllowTcpForwarding (kept on for ProxyJump to guest VMs).
+      security_sshd_allow_agent_forwarding:
+        type: bool
+        default: true
+        description: sshd AllowAgentForwarding.
+      security_sshd_host_keys_files:
+        type: list
+        elements: str
+        description: Existing SSH host key files (prevents hardening regenerating them each run).
+      security_pwquality:
+        type: dict
+        description: pwquality settings passed to konstruktoid (relaxed for key-only SSH).
+      security_packages_debian:
+        type: list
+        elements: str
+        description: Package list override for konstruktoid (Trixie-safe, Proxmox-friendly).

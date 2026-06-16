@@ -1,0 +1,296 @@
+---
+# tasks file for nkg.proxmox.crowdsec
+#
+# Installs the CrowdSec engine and firewall bouncer on a Proxmox host from the
+# upstream GitHub release tarballs, installs hub collections/scenarios/parsers/
+# postoverflows, configures acquisition + whitelists, and optionally enrolls in
+# the CrowdSec console.
+#
+# Ported from Regularmusic/iac ansible/roles/crowdsec.
+
+- name: Install prerequisites
+  ansible.builtin.apt:
+    name:
+      - nftables
+      - gettext-base
+    state: present
+    update_cache: true
+
+- name: Start nftables service
+  ansible.builtin.service:
+    name: nftables
+    state: started
+    enabled: true
+  when: crowdsec_firewall == 'nftables'
+
+# --- Clean up packagecloud apt repo (breaks apt on Trixie due to 302 redirects) ---
+
+- name: Remove packagecloud apt repo and GPG keys
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/apt/sources.list.d/crowdsec_crowdsec.list
+    - /etc/apt/sources.list.d/crowdsec_crowdsec.sources
+    - /etc/apt/sources.list.d/crowdsec.sources
+    - /etc/apt/keyrings/crowdsec_crowdsec-archive-keyring.gpg
+    - /etc/apt/keyrings/crowdsec_crowdsec-archive-keyring.asc
+    - /etc/apt/apt.conf.d/99packagecloud-redirects
+
+# --- Install CrowdSec from GitHub release tarball ---
+
+- name: Check if CrowdSec is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/crowdsec
+  register: crowdsec_bin
+  when: not crowdsec_skip_install
+
+- name: Check installed CrowdSec version
+  ansible.builtin.command:
+    cmd: crowdsec -version
+  register: crowdsec_installed_version
+  changed_when: false
+  failed_when: false
+  when:
+    - not crowdsec_skip_install
+    - crowdsec_bin.stat.exists | default(false)
+
+- name: Set CrowdSec install action
+  ansible.builtin.set_fact:
+    crowdsec_needs_install: >-
+      {{ not crowdsec_skip_install and not (crowdsec_bin.stat.exists | default(false)) }}
+    crowdsec_needs_upgrade: >-
+      {{ not crowdsec_skip_install and
+         crowdsec_bin.stat.exists | default(false) and
+         (crowdsec_installed_version.stdout | default('') is not search('v' + crowdsec_version)) }}
+
+- name: Create temporary download directory
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: crowdsec_
+  register: crowdsec_tmpdir
+  when: crowdsec_needs_install | bool or crowdsec_needs_upgrade | bool
+
+- name: Download CrowdSec release tarball
+  ansible.builtin.get_url:
+    url: "https://github.com/crowdsecurity/crowdsec/releases/download/v{{ crowdsec_version }}/crowdsec-release.tgz"
+    dest: "{{ crowdsec_tmpdir.path }}/crowdsec-release.tgz"
+    mode: "0644"
+  when: crowdsec_needs_install | bool or crowdsec_needs_upgrade | bool
+
+- name: Extract CrowdSec release tarball
+  ansible.builtin.unarchive:
+    src: "{{ crowdsec_tmpdir.path }}/crowdsec-release.tgz"
+    dest: "{{ crowdsec_tmpdir.path }}"
+    remote_src: true
+  when: crowdsec_needs_install | bool or crowdsec_needs_upgrade | bool
+
+- name: Install CrowdSec via wizard.sh (fresh install)
+  ansible.builtin.command:
+    cmd: sh ./wizard.sh --unattended
+    chdir: "{{ crowdsec_tmpdir.path }}/crowdsec-v{{ crowdsec_version }}"
+  register: crowdsec_install_result
+  changed_when: true
+  when: crowdsec_needs_install | bool
+
+- name: Upgrade CrowdSec via wizard.sh
+  ansible.builtin.command:
+    cmd: sh ./wizard.sh --upgrade --force
+    chdir: "{{ crowdsec_tmpdir.path }}/crowdsec-v{{ crowdsec_version }}"
+  register: crowdsec_upgrade_result
+  changed_when: true
+  when: crowdsec_needs_upgrade | bool
+
+- name: Clean up download directory
+  ansible.builtin.file:
+    path: "{{ crowdsec_tmpdir.path }}"
+    state: absent
+  when: crowdsec_needs_install | bool or crowdsec_needs_upgrade | bool
+
+# --- Install firewall bouncer from GitHub release ---
+
+- name: Check if firewall bouncer is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/crowdsec-firewall-bouncer
+  register: crowdsec_bouncer_bin
+  when:
+    - not crowdsec_skip_install
+    - crowdsec_install_bouncer | bool
+
+- name: Set bouncer needs install fact
+  ansible.builtin.set_fact:
+    crowdsec_bouncer_needs_install: >-
+      {{ not crowdsec_skip_install and
+         crowdsec_install_bouncer | bool and
+         not (crowdsec_bouncer_bin.stat.exists | default(false)) }}
+
+- name: Create temporary download directory for bouncer
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: crowdsec_bouncer_
+  register: crowdsec_bouncer_tmpdir
+  when: crowdsec_bouncer_needs_install | bool
+
+- name: Download firewall bouncer tarball
+  ansible.builtin.get_url:
+    url: "https://github.com/crowdsecurity/cs-firewall-bouncer/releases/download/v{{ crowdsec_bouncer_version }}/crowdsec-firewall-bouncer-linux-amd64.tgz"
+    dest: "{{ crowdsec_bouncer_tmpdir.path }}/crowdsec-firewall-bouncer.tgz"
+    mode: "0644"
+  when: crowdsec_bouncer_needs_install | bool
+
+- name: Extract firewall bouncer tarball
+  ansible.builtin.unarchive:
+    src: "{{ crowdsec_bouncer_tmpdir.path }}/crowdsec-firewall-bouncer.tgz"
+    dest: "{{ crowdsec_bouncer_tmpdir.path }}"
+    remote_src: true
+  when: crowdsec_bouncer_needs_install | bool
+
+- name: Install firewall bouncer via install.sh
+  ansible.builtin.command:
+    cmd: sh ./install.sh
+    chdir: "{{ crowdsec_bouncer_tmpdir.path }}/crowdsec-firewall-bouncer-v{{ crowdsec_bouncer_version }}"
+    stdin: "{{ crowdsec_firewall }}"
+  register: crowdsec_bouncer_install_result
+  changed_when: true
+  when: crowdsec_bouncer_needs_install | bool
+
+- name: Clean up bouncer download directory
+  ansible.builtin.file:
+    path: "{{ crowdsec_bouncer_tmpdir.path }}"
+    state: absent
+  when: crowdsec_bouncer_needs_install | bool
+
+# --- Configure CrowdSec ---
+
+- name: Install CrowdSec collections
+  ansible.builtin.command:
+    cmd: "cscli collections install {{ item }}"
+  loop: "{{ crowdsec_collections }}"
+  register: crowdsec_collections_result
+  changed_when: "'installed successfully' in crowdsec_collections_result.stdout"
+  failed_when: crowdsec_collections_result.rc != 0 and 'already' not in crowdsec_collections_result.stderr
+  when: not crowdsec_skip_install
+
+- name: Install CrowdSec scenarios
+  ansible.builtin.command:
+    cmd: "cscli scenarios install {{ item }}"
+  loop: "{{ crowdsec_scenarios }}"
+  register: crowdsec_scenarios_result
+  changed_when: "'installed successfully' in crowdsec_scenarios_result.stdout"
+  failed_when: crowdsec_scenarios_result.rc != 0 and 'already' not in crowdsec_scenarios_result.stderr
+  when: not crowdsec_skip_install
+
+- name: Install CrowdSec parsers
+  ansible.builtin.command:
+    cmd: "cscli parsers install {{ item }}"
+  loop: "{{ crowdsec_parsers }}"
+  register: crowdsec_parsers_result
+  changed_when: "'installed successfully' in crowdsec_parsers_result.stdout"
+  failed_when: crowdsec_parsers_result.rc != 0 and 'already' not in crowdsec_parsers_result.stderr
+  when: not crowdsec_skip_install
+
+- name: Install CrowdSec postoverflows
+  ansible.builtin.command:
+    cmd: "cscli postoverflows install {{ item }}"
+  loop: "{{ crowdsec_postoverflows }}"
+  register: crowdsec_postoverflows_result
+  changed_when: "'installed successfully' in crowdsec_postoverflows_result.stdout"
+  failed_when: crowdsec_postoverflows_result.rc != 0 and 'already' not in crowdsec_postoverflows_result.stderr
+  when: not crowdsec_skip_install
+
+- name: Ensure CrowdSec config directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /etc/crowdsec
+    - /etc/crowdsec/acquis.d
+    - /etc/crowdsec/parsers/s02-enrich
+
+- name: Configure acquisition
+  ansible.builtin.copy:
+    content: "{{ crowdsec_acquis_config }}"
+    dest: /etc/crowdsec/acquis.d/custom.yaml
+    mode: "0644"
+  notify: Restart CrowdSec
+  when: crowdsec_acquis_config is defined
+
+- name: Configure whitelist IPs
+  ansible.builtin.template:
+    src: whitelist.yaml.j2
+    dest: /etc/crowdsec/parsers/s02-enrich/whitelist.yaml
+    mode: "0644"
+  notify: Restart CrowdSec
+  when: crowdsec_whitelist_ips is defined or crowdsec_whitelist_cidrs is defined
+
+- name: Check if profiles.yaml exists
+  ansible.builtin.stat:
+    path: /etc/crowdsec/profiles.yaml
+  register: crowdsec_profiles_file
+
+- name: Configure ban duration
+  ansible.builtin.lineinfile:
+    path: /etc/crowdsec/profiles.yaml
+    regexp: "^(\\s*)duration:.*"
+    line: "\\1{{ crowdsec_ban_duration }}"
+    backrefs: true
+  notify: Restart CrowdSec
+  when: crowdsec_profiles_file.stat.exists
+
+- name: Check if config.yaml exists
+  ansible.builtin.stat:
+    path: /etc/crowdsec/config.yaml
+  register: crowdsec_config_file
+
+- name: Enable Prometheus metrics
+  ansible.builtin.lineinfile:
+    path: /etc/crowdsec/config.yaml
+    regexp: "^(\\s*)enabled:.*# Prometheus"
+    line: "\\1{{ crowdsec_prometheus_enabled }}  # Prometheus"
+    backrefs: true
+  notify: Restart CrowdSec
+  when: crowdsec_config_file.stat.exists
+
+- name: Check if CrowdSec service exists
+  ansible.builtin.systemd:
+    name: crowdsec
+  register: crowdsec_service_status
+  failed_when: false
+  changed_when: false
+
+- name: Ensure CrowdSec is started and enabled
+  ansible.builtin.service:
+    name: crowdsec
+    state: started
+    enabled: true
+  when: crowdsec_service_status.status is defined and crowdsec_service_status.status.LoadState == "loaded"
+
+# --- Console enrollment ---
+
+- name: Check if CrowdSec Console is enrolled
+  ansible.builtin.stat:
+    path: /etc/crowdsec/console.yaml
+  register: crowdsec_console_config
+  when:
+    - crowdsec_console_enrollment_key | length > 0
+    - not crowdsec_skip_install
+
+- name: Enroll in CrowdSec Console
+  ansible.builtin.command:
+    cmd: "cscli console enroll {{ crowdsec_console_enrollment_key }}"
+  register: crowdsec_enroll_result
+  changed_when: crowdsec_enroll_result.rc == 0
+  no_log: true
+  when:
+    - crowdsec_console_enrollment_key | length > 0
+    - not crowdsec_skip_install
+    - not (crowdsec_console_config.stat.exists | default(false))
+  notify: Restart CrowdSec
+
+- name: Display CrowdSec installation status
+  ansible.builtin.debug:
+    msg: |
+      CrowdSec version: {{ crowdsec_version }}
+      CrowdSec service found: {{ crowdsec_service_status.status is defined }}
+      CrowdSec target: {{ crowdsec_target }}

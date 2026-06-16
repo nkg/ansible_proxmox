@@ -1,0 +1,26 @@
+---
+# Molecule scenario for the crowdsec role. Ported from Regularmusic/iac.
+# The converge sets crowdsec_skip_install: true, so it exercises the config and
+# idempotency paths without downloading the architecture-specific binaries.
+driver:
+  name: docker
+platforms:
+  - name: debian-trixie
+    image: debian:trixie
+    pre_build_image: false
+    privileged: true
+    cgroupns_mode: host
+    command: /lib/systemd/systemd
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /tmp
+    dockerfile: Dockerfile.j2
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_ROLES_PATH: ../../..
+    ANSIBLE_REMOTE_TMP: /tmp/.ansible/tmp
+verifier:
+  name: ansible

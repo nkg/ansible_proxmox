@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  author: nkg
+  description: Create an IaC admin user and Proxmox API token (for Terraform/OpenTofu) on a running Proxmox host.
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+  galaxy_tags:
+    - proxmox
+    - api
+    - terraform
+dependencies: []

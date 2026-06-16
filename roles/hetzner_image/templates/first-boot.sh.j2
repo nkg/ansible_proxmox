@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# First-boot script: runs once after Proxmox installation
+# Baked into autoinstall ISO via proxmox-auto-install-assistant --on-first-boot
+
+# ---- Logging ----
+LOG="/var/log/first-boot.log"
+exec > >(tee -a "${LOG}") 2>&1
+
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
+
+log "========== first-boot.sh starting =========="
+log "Hostname: $(hostname)"
+log "Kernel:   $(uname -r)"
+log "Uptime:   $(uptime)"
+
+# ---- Run-once guard ----
+MARKER="/var/lib/first-boot-done"
+if [[ -f "${MARKER}" ]]; then
+  log "Marker ${MARKER} exists — already ran successfully, skipping"
+  exit 0
+fi
+
+log "--- Pre-existing state ---"
+log "Users:  $(getent passwd | grep -E ':[0-9]{4}:' | cut -d: -f1 | tr '\n' ' ')"
+log "Groups: $(getent group | grep -E ':[0-9]{4}:' | cut -d: -f1 | tr '\n' ' ')"
+log "APT sources:"
+log "$(ls /etc/apt/sources.list.d/ 2>/dev/null || echo 'none')"
+log "---"
+
+set -euo pipefail
+trap 'log "ERROR: command failed at line ${LINENO} (exit $?)"; exit 1' ERR
+
+USER="{{ hetzner_image_admin_user }}"
+GROUP="${USER}"
+SSH_KEY="{{ hetzner_image_ssh_public_key }}"
+
+# --- System user ---
+
+if getent group "${GROUP}" >/dev/null 2>&1; then
+  log "Group '${GROUP}' already exists, skipping"
+else
+  log "Creating group '${GROUP}'"
+  groupadd "${GROUP}"
+fi
+
+if id "${USER}" >/dev/null 2>&1; then
+  log "User '${USER}' already exists (uid=$(id -u "${USER}")), ensuring group membership"
+  usermod -aG sudo "${USER}"
+else
+  log "Creating user '${USER}' with groups: sudo"
+  useradd -m -g "${GROUP}" -G sudo -s /bin/bash "${USER}"
+  PASSWORD="$(openssl rand -base64 12)"
+  echo "${USER}:${PASSWORD}" | chpasswd
+  echo "PASSWORD: ${PASSWORD}" > /root/password
+  chmod 0600 /root/password
+  log "Password set for '${USER}'"
+fi
+log "User '${USER}' ready (uid=$(id -u "${USER}"))"
+
+# SSH key
+HOME_DIR=$(eval echo "~${USER}")
+mkdir -p "${HOME_DIR}/.ssh"
+echo "${SSH_KEY}" > "${HOME_DIR}/.ssh/authorized_keys"
+chmod 700 "${HOME_DIR}/.ssh"
+chmod 600 "${HOME_DIR}/.ssh/authorized_keys"
+chown -R "${USER}:${GROUP}" "${HOME_DIR}/.ssh"
+log "SSH key deployed to ${HOME_DIR}/.ssh/authorized_keys"
+
+# Passwordless sudo — disable enterprise repos first (no subscription)
+log "Disabling enterprise APT repos"
+for f in /etc/apt/sources.list.d/pve-enterprise.list /etc/apt/sources.list.d/ceph.list; do
+  if [[ -f "$f" ]]; then
+    sed -i 's/^deb /#deb /' "$f"
+    log "  Commented out: $f"
+  fi
+done
+# DEB822 format (.sources files) — set Enabled: no
+for f in /etc/apt/sources.list.d/pve-enterprise.sources /etc/apt/sources.list.d/ceph.sources; do
+  if [[ -f "$f" ]]; then
+    sed -i 's/^Enabled: yes/Enabled: no/' "$f"
+    # If no Enabled field exists, add one after the Types line
+    if ! grep -q '^Enabled:' "$f"; then
+      if grep -q '^Types:' "$f"; then
+        sed -i '/^Types:/a Enabled: no' "$f"
+      else
+        log "  WARNING: no Types field in $f, cannot disable"
+        continue
+      fi
+    fi
+    if grep -q '^Enabled: no' "$f"; then
+      log "  Disabled: $f"
+    else
+      log "  WARNING: failed to disable $f"
+    fi
+  fi
+done
+
+log "Installing sudo"
+apt-get update -qq
+apt-get install -y -qq sudo
+echo "${USER} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USER}"
+chmod 0440 "/etc/sudoers.d/${USER}"
+visudo -cf "/etc/sudoers.d/${USER}"
+log "Passwordless sudo configured for '${USER}'"
+
+# --- Proxmox API user/group/role/token ---
+
+log "Configuring local storage content types"
+pvesm set local --content "{{ hetzner_image_local_storage_content }}"
+
+if pveum user list | grep -q "${USER}@pam"; then
+  log "Proxmox API user '${USER}@pam' already exists, skipping"
+else
+  log "Creating Proxmox API user '${USER}@pam'"
+  pveum user add "${USER}@pam" -comment "API user for IaC"
+fi
+
+if pveum group list | grep -q "${USER}-group"; then
+  log "Proxmox group '${USER}-group' already exists, skipping"
+else
+  log "Creating Proxmox group '${USER}-group'"
+  pveum group add "${USER}-group" -comment "Group for IaC API users"
+fi
+
+if pveum role list | grep -q "${USER}-role"; then
+  log "Proxmox role '${USER}-role' already exists, skipping"
+else
+  log "Creating Proxmox role '${USER}-role'"
+  pveum role add "${USER}-role" --privs "{{ hetzner_image_admin_role_privileges | join(',') }}"
+fi
+
+pveum user modify "${USER}@pam" -group "${USER}-group"
+pveum acl modify / -group "${USER}-group" -role "${USER}-role"
+log "User assigned to group/role with ACL"
+
+# Token — skip if already generated
+if [[ -f /root/token ]] && [[ -s /root/token ]]; then
+  log "API token already exists at /root/token, skipping"
+else
+  log "Generating API token"
+  TOKEN=$(pveum user token add "${USER}@pam" apitoken --privsep 0 \
+    | grep -E 'value.*[a-z0-9]+(-[a-z0-9]+){4,}' \
+    | awk '{print $4}' \
+    | head -n1)
+
+  if [[ -z "${TOKEN}" ]]; then
+    log "ERROR: failed to extract API token from pveum output"
+    exit 1
+  fi
+
+  echo "${TOKEN}" > /root/token
+  chmod 0600 /root/token
+  log "Token saved to /root/token"
+fi
+
+# Mark as completed so re-runs are skipped
+touch "${MARKER}"
+log "========== first-boot.sh completed successfully =========="

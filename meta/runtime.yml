@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: MIT-0
+---
+# Minimum Ansible version required to use this collection. The security role
+# depends on konstruktoid.hardening which needs >=2.18; the rest work on 2.15.
+requires_ansible: ">=2.15.0"

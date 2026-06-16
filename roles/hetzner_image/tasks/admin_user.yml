@@ -1,0 +1,58 @@
+---
+# Ported from Regularmusic/iac tasks/ensure_admin_user.yml.
+# Ensure the admin user exists with its SSH key and passwordless sudo.
+# Included by the configure phase (delegated into the QEMU guest).
+#
+# Key policy:
+#   - Admin user gets hetzner_image_admin_ssh_public_key (passphrase-free,
+#     intended for automation)
+#   - Root gets hetzner_image_ssh_public_key (for interactive access)
+#   - Sudo is passwordless for the admin user
+
+- name: Create admin group
+  ansible.builtin.group:
+    name: "{{ hetzner_image_admin_user }}"
+    state: present
+
+- name: Create admin user
+  ansible.builtin.user:
+    name: "{{ hetzner_image_admin_user }}"
+    group: "{{ hetzner_image_admin_user }}"
+    groups: sudo
+    append: true
+    shell: /bin/bash
+    create_home: true
+    state: present
+    password: "!"
+
+- name: Ensure .ssh directory for admin user
+  ansible.builtin.file:
+    path: "/home/{{ hetzner_image_admin_user }}/.ssh"
+    state: directory
+    owner: "{{ hetzner_image_admin_user }}"
+    group: "{{ hetzner_image_admin_user }}"
+    mode: "0700"
+
+- name: Deploy automation SSH key for admin user
+  ansible.builtin.lineinfile:
+    path: "/home/{{ hetzner_image_admin_user }}/.ssh/authorized_keys"
+    line: "{{ hetzner_image_admin_ssh_public_key }}"
+    create: true
+    owner: "{{ hetzner_image_admin_user }}"
+    group: "{{ hetzner_image_admin_user }}"
+    mode: "0600"
+
+- name: Deploy SSH key for root
+  ansible.posix.authorized_key:
+    user: root
+    key: "{{ hetzner_image_ssh_public_key }}"
+    state: present
+
+- name: Grant admin user passwordless sudo
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/{{ hetzner_image_admin_user }}"
+    content: "{{ hetzner_image_admin_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: "visudo -cf %s"

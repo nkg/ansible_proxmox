@@ -1,0 +1,7 @@
+---
+# ansible-lint configuration for the nkg.proxmox collection.
+profile: production
+
+exclude_paths:
+  - .ansible/
+  - .github/

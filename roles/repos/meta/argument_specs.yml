@@ -1,0 +1,40 @@
+---
+argument_specs:
+  main:
+    short_description: Manage Proxmox VE APT repositories and the subscription nag.
+    options:
+      repos_use_enterprise:
+        type: bool
+        default: false
+        description: Enable the paid pve-enterprise repository (requires a subscription key).
+      repos_no_subscription:
+        type: bool
+        default: true
+        description: Enable the free pve-no-subscription repository.
+      repos_ceph_enabled:
+        type: bool
+        default: false
+        description: Enable the Ceph no-subscription repository.
+      repos_ceph_release:
+        type: str
+        default: quincy
+        description: Ceph release codename used to build the repository line.
+      repos_debian_suite:
+        type: str
+        description: Debian suite for the repository lines. Defaults to the host's release.
+      repos_remove_subscription_nag:
+        type: bool
+        default: true
+        description: Patch proxmoxlib.js to suppress the "No valid subscription" dialog.
+      repos_widget_toolkit_path:
+        type: str
+        default: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+        description: Path to the web UI JS bundle patched to remove the nag.
+      repos_no_nag_script_dest:
+        type: str
+        default: /etc/apt/apt.conf.d/no-nag-script
+        description: Path to the APT post-invoke hook that re-applies the nag patch after upgrades.
+      repos_update_cache:
+        type: bool
+        default: true
+        description: Run apt update after applying repository changes.

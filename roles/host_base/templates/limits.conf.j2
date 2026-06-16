@@ -1,0 +1,4 @@
+# {{ ansible_managed }}
+{% for limit in host_base_limits %}
+{{ limit.domain }} {{ limit.type }} {{ limit.item }} {{ limit.value }}
+{% endfor %}

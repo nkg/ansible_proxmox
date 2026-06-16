@@ -1,0 +1,22 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  tasks:
+    - name: Check the subscription-nag APT hook was installed
+      ansible.builtin.stat:
+        path: /etc/apt/apt.conf.d/no-nag-script
+      register: nag_hook
+
+    - name: Read the APT hook
+      ansible.builtin.slurp:
+        src: /etc/apt/apt.conf.d/no-nag-script
+      register: nag_hook_content
+      when: nag_hook.stat.exists
+
+    - name: Assert the APT hook is present and targets the widget toolkit
+      ansible.builtin.assert:
+        that:
+          - nag_hook.stat.exists
+          - "'proxmox-widget-toolkit' in (nag_hook_content.content | b64decode)"
+        fail_msg: "subscription-nag APT hook not installed correctly"

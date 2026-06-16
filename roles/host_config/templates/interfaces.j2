@@ -1,0 +1,42 @@
+# {{ ansible_managed }}
+# /etc/network/interfaces - Proxmox VE network configuration
+# Topology: bridged (single-server pattern, public vmbr0 + private vmbr1 + NAT)
+
+auto lo
+iface lo inet loopback
+
+# Physical NIC - bridge slave (no IP)
+auto {{ host_config_physical_nic }}
+iface {{ host_config_physical_nic }} inet manual
+
+# Primary bridge - public network
+auto {{ host_config_bridge_name }}
+iface {{ host_config_bridge_name }} inet static
+    address {{ ansible_default_ipv4.address }}
+    netmask {{ ansible_default_ipv4.netmask }}
+    gateway {{ ansible_default_ipv4.gateway }}
+    bridge-ports {{ host_config_physical_nic }}
+    bridge-stp off
+    bridge-fd 0
+    # Proxy ARP for additional IPs
+    post-up echo 1 > /proc/sys/net/ipv4/conf/{{ host_config_bridge_name }}/proxy_arp
+    post-up echo 1 > /proc/sys/net/ipv4/conf/{{ host_config_physical_nic }}/proxy_arp
+{% if host_config_secondary_ip %}
+    # Route secondary IP through bridge for VM passthrough
+    post-up ip route replace {{ host_config_secondary_ip }}/32 dev {{ host_config_bridge_name }}
+    post-down ip route del {{ host_config_secondary_ip }}/32 dev {{ host_config_bridge_name }} || true
+{% endif %}
+
+# Private network bridge - VM internal network with NAT
+auto {{ host_config_private_bridge_name }}
+iface {{ host_config_private_bridge_name }} inet static
+    address {{ host_config_bridge_address }}
+    netmask {{ host_config_private_subnet | ansible.utils.ipaddr('netmask') }}
+    bridge-ports none
+    bridge-stp off
+    bridge-fd 0
+    # NAT masquerade for private subnet
+    post-up iptables -t nat -A POSTROUTING -s {{ host_config_private_subnet }} -o {{ host_config_bridge_name }} -j MASQUERADE
+    post-down iptables -t nat -D POSTROUTING -s {{ host_config_private_subnet }} -o {{ host_config_bridge_name }} -j MASQUERADE || true
+
+source /etc/network/interfaces.d/*

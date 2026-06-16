@@ -1,0 +1,29 @@
+---
+# CPU optimisation — enable SMT (Hyper-Threading).
+# Ported from Regularmusic/iac proxmox_setup cpu.yml.
+
+- name: Check if SMT control is available
+  ansible.builtin.stat:
+    path: /sys/devices/system/cpu/smt/control
+  register: host_config_smt_control
+
+- name: Get current SMT status
+  ansible.builtin.slurp:
+    src: /sys/devices/system/cpu/smt/control
+  register: host_config_smt_status
+  when: host_config_smt_control.stat.exists
+
+- name: Enable SMT (Hyper-Threading)
+  ansible.builtin.shell: echo on > /sys/devices/system/cpu/smt/control
+  when:
+    - host_config_smt_control.stat.exists
+    - host_config_smt_status.content | b64decode | trim != 'on'
+  changed_when: true
+
+- name: Ensure SMT is enabled on boot
+  ansible.builtin.lineinfile:
+    path: /etc/default/grub
+    regexp: "^GRUB_CMDLINE_LINUX.*nosmt.*"
+    state: absent
+  notify: Update GRUB
+  when: host_config_smt_control.stat.exists

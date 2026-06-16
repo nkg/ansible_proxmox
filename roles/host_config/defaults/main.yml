@@ -1,0 +1,52 @@
+---
+# defaults file for nkg.proxmox.host_config
+# Ported from Regularmusic/iac proxmox_setup. Baseline pieces default on;
+# environment-specific pieces default off — enable the ones you need.
+
+# --- HA services (single-node) ---
+host_config_disable_ha: true
+
+# --- CPU: enable SMT / Hyper-Threading (opt-in; hardware policy) ---
+host_config_manage_cpu: false
+
+# --- Local storage content types ---
+# Enable snippets (cloud-init/hookscripts) + import (qcow2 cloud images) on the
+# Proxmox "local" datastore. Needed before OpenTofu/Terraform downloads images.
+host_config_manage_storage: false
+host_config_local_storage_content: "images,rootdir,vztmpl,iso,snippets,import,backup"
+
+# --- LXC AppArmor stub fix (opt-in) ---
+# Only needed when a blanket aa-enforce hardening pass (e.g.
+# konstruktoid.hardening) breaks the lxc-* management tools. See tasks/lxc.yml.
+host_config_lxc_apparmor_fix: false
+
+# --- /tmp exec override (opt-in) ---
+# Restores exec on /tmp when a hardening role mounts it noexec (breaks
+# Terraform remote-exec). Keeps nosuid,nodev. See tasks/tmp_exec.yml.
+host_config_tmp_exec_override: false
+
+# --- Networking (opt-in) ---
+# Hetzner single-server dual-bridge topology: public vmbr0 + private vmbr1 with
+# NAT, proxy ARP, ifupdown2. Rewrites /etc/network/interfaces — set the values
+# below to match your environment before enabling.
+host_config_manage_networking: false
+host_config_bridge_name: vmbr0
+host_config_private_bridge_name: vmbr1
+host_config_bridge_address: "10.10.10.254"
+host_config_private_subnet: "10.10.10.0/24"
+host_config_secondary_ip: ""
+host_config_nameservers: []
+host_config_backup_interfaces: true
+host_config_sysctl_path: /etc/sysctl.d/99-proxmox-networking.conf
+host_config_apt_cache_valid_time: 3600
+
+# --- ACME / Let's Encrypt for the web UI (opt-in, Cloudflare DNS-01) ---
+host_config_acme_enabled: false
+host_config_acme_domain: "{{ ansible_fqdn }}"
+host_config_acme_account: default
+host_config_acme_email: ""
+host_config_acme_plugin_id: cf
+host_config_acme_directory: https://acme-v02.api.letsencrypt.org/directory
+# Cloudflare API token for the DNS-01 challenge. Supply via vault/SOPS; the
+# ACME block is skipped entirely when this is empty.
+host_config_acme_cf_token: ""

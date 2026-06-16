@@ -1,0 +1,31 @@
+---
+argument_specs:
+  main:
+    short_description: Baseline Proxmox host preparation (hostname, packages, sysctl).
+    options:
+      host_base_hostname:
+        type: str
+        description: Hostname to set. Defaults to the short inventory hostname.
+      host_base_timezone:
+        type: str
+        default: Etc/UTC
+        description: System timezone.
+      host_base_system_upgrade:
+        type: bool
+        default: true
+        description: Perform an apt dist-upgrade during the run.
+      host_base_packages:
+        type: list
+        elements: str
+        description: Base packages installed on every host.
+      host_base_sysctl:
+        type: dict
+        default: {}
+        description: sysctl key/value pairs written to /etc/sysctl.d/.
+      host_base_limits:
+        type: list
+        elements: dict
+        default: []
+        description: >-
+          ulimit entries written to /etc/security/limits.d/. Each item needs
+          domain, type, item and value keys.

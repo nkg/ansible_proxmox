@@ -1,0 +1,158 @@
+---
+# Ported from Regularmusic/iac proxmox_post.
+# Clean up temporary files, reboot into the installed Proxmox, and verify the
+# API is up.
+#
+# NOTE: the original proxmox_post role saved the generated API token to a
+# SOPS-encrypted secrets file on the control node. That SOPS coupling is gone.
+# Instead this role captures the token first-boot.sh writes to /root/token and
+# exposes it as the `hetzner_image_api_token` fact (and, optionally, writes it
+# to a controller-side file). Bring your own secret store — pipe the fact into
+# SOPS/Vault/etc. in your playbook. See the "Capture the generated API token"
+# block below; toggle with hetzner_image_capture_token.
+
+# ---- Cleanup (runs regardless of install state) ----
+
+- name: Clean up temporary files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ hetzner_image_cleanup_files }}"
+
+- name: Clean up QEMU log files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /root/qemu_install.log
+    - /root/qemu_config.log
+
+# ---- Reboot into installed Proxmox ----
+
+- name: Reboot into installed Proxmox
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+    msg: "Rebooting into installed Proxmox VE"
+  when: not hetzner_image_installed.stat.exists
+
+# ---- Verify installation ----
+
+- name: Wait for Proxmox API to become available
+  ansible.builtin.wait_for:
+    host: "{{ hetzner_image_main_ipv4 }}"
+    port: 8006
+    delay: 30
+    timeout: 300
+
+- name: Check Proxmox version
+  ansible.builtin.command: pveversion
+  register: hetzner_image_post_version
+  changed_when: false
+
+- name: Check Proxmox cluster status
+  ansible.builtin.command: pvecm status
+  register: hetzner_image_post_cluster
+  changed_when: false
+  failed_when: false
+
+- name: Check if first-boot log exists
+  ansible.builtin.stat:
+    path: /var/log/first-boot.log
+  register: hetzner_image_post_firstboot_log
+
+- name: Read first-boot log
+  ansible.builtin.command: cat /var/log/first-boot.log
+  register: hetzner_image_post_firstboot_content
+  changed_when: false
+  when: hetzner_image_post_firstboot_log.stat.exists
+
+- name: Display first-boot log
+  ansible.builtin.debug:
+    msg: "{{ hetzner_image_post_firstboot_content.stdout_lines }}"
+  when: hetzner_image_post_firstboot_log.stat.exists
+
+- name: Warn if first-boot log is missing
+  ansible.builtin.debug:
+    msg: "WARNING: /var/log/first-boot.log not found — first-boot script may not have run!"
+  when: not hetzner_image_post_firstboot_log.stat.exists
+
+# ---- Capture the generated API token (opt-in) ----
+# first-boot.sh writes the IaC API token to /root/token. Expose it as a fact so
+# the calling playbook can store it however it likes (SOPS, Vault, …), without
+# this role taking a dependency on any secret backend.
+
+- name: Check for the generated API token
+  ansible.builtin.stat:
+    path: /root/token
+  register: hetzner_image_token_file
+  when: hetzner_image_capture_token | bool
+
+- name: Read the generated API token
+  ansible.builtin.slurp:
+    src: /root/token
+  register: hetzner_image_token_slurp
+  no_log: true
+  when:
+    - hetzner_image_capture_token | bool
+    - hetzner_image_token_file.stat.exists | default(false)
+
+- name: Set API token facts
+  ansible.builtin.set_fact:
+    hetzner_image_api_token: "{{ hetzner_image_token_slurp.content | b64decode | trim }}"
+    hetzner_image_api_token_id: "{{ hetzner_image_admin_user }}@pam!apitoken"
+  no_log: true
+  when:
+    - hetzner_image_capture_token | bool
+    - hetzner_image_token_file.stat.exists | default(false)
+
+- name: Write API token to a controller-side file
+  delegate_to: localhost
+  become: false
+  ansible.builtin.copy:
+    dest: "{{ hetzner_image_token_output_path }}"
+    content: "{{ hetzner_image_api_token }}\n"
+    mode: "0600"
+  no_log: true
+  when:
+    - hetzner_image_capture_token | bool
+    - hetzner_image_token_file.stat.exists | default(false)
+    - hetzner_image_token_output_path | length > 0
+
+- name: Remove the on-disk token after capture
+  ansible.builtin.file:
+    path: /root/token
+    state: absent
+  when:
+    - hetzner_image_capture_token | bool
+    - hetzner_image_token_file.stat.exists | default(false)
+    - hetzner_image_remove_token_after_capture | bool
+
+- name: Report API token capture
+  ansible.builtin.debug:
+    msg: >-
+      Captured API token id {{ hetzner_image_admin_user }}@pam!apitoken into the
+      hetzner_image_api_token fact{{ ' and ' ~ hetzner_image_token_output_path
+      if hetzner_image_token_output_path | length > 0 else '' }} (secret hidden).
+  when:
+    - hetzner_image_capture_token | bool
+    - hetzner_image_token_file.stat.exists | default(false)
+
+# ---- Ensure first-boot password file is removed ----
+# /root/password is never needed after first boot — SSH keys are the
+# production access method.
+
+- name: Remove first-boot password file
+  ansible.builtin.file:
+    path: /root/password
+    state: absent
+
+- name: Display completion message
+  ansible.builtin.debug:
+    msg: |
+      ============================================
+      Proxmox VE installation completed!
+      ============================================
+      Version:  {{ hetzner_image_post_version.stdout }}
+      Web UI:   https://{{ hetzner_image_main_ipv4 }}:8006
+      Username: root
+      ============================================

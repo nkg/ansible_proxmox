@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  author: nkg
+  description: Apply konstruktoid.hardening to a Proxmox host with Proxmox-safe overrides.
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.18"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+  galaxy_tags:
+    - proxmox
+    - security
+    - hardening
+    - cis
+# konstruktoid.hardening is a standalone Galaxy role (not a collection), so it
+# cannot be expressed as a collection dependency in galaxy.yml. It is applied
+# via include_role in tasks/main.yml and must be installed separately — see the
+# collection requirements.yml.
+dependencies: []

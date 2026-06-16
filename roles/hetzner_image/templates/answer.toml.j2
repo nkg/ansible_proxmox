@@ -1,0 +1,37 @@
+# {{ ansible_managed }}
+# Proxmox VE Automated Installation Answer File
+#
+# NOTE: Disks are passed to QEMU with if=virtio, so inside the guest
+# they appear as /dev/vda, /dev/vdb, etc. — NOT as the host device
+# names (e.g., /dev/nvme0n1). The ordering matches hetzner_image_disks.
+
+[global]
+keyboard = "{{ hetzner_image_keyboard | default('en-gb') }}"
+country = "{{ hetzner_image_country | default('gb') }}"
+fqdn = "{{ hetzner_image_hostname }}.{{ hetzner_image_domain | default('local') }}"
+mailto = "{{ hetzner_image_email }}"
+timezone = "{{ hetzner_image_timezone | default('UTC') }}"
+root_password_hashed = "{{ hetzner_image_root_password_hashed }}"
+
+reboot_on_error = true
+root-ssh-keys = [
+  "{{ hetzner_image_ssh_public_key }}"
+]
+
+[network]
+source = "from-dhcp"
+
+[disk-setup]
+filesystem = "{{ hetzner_image_filesystem | default('zfs') }}"
+{% if (hetzner_image_filesystem | default('zfs')) == 'zfs' %}
+zfs.raid = "{{ hetzner_image_zfs_raid | default('raid1') }}"
+{% endif %}
+{% set vdisks = [] %}
+{% for disk in hetzner_image_disks %}
+{%   set _ = vdisks.append("vd" + "abcdefghijklmnopqrstuvwxyz"[loop.index0]) %}
+{% endfor %}
+disk_list = [{% for vd in vdisks %}"{{ vd }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+
+[first-boot]
+source = "from-iso"
+ordering = "fully-up"

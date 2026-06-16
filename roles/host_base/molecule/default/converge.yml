@@ -1,0 +1,21 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  vars:
+    host_base_hostname: molecule-pve
+    host_base_timezone: Europe/London
+    # Keep CI fast — no full dist-upgrade, minimal package set.
+    host_base_system_upgrade: false
+    host_base_packages:
+      - curl
+      - git
+    host_base_sysctl:
+      net.ipv4.ip_forward: "1"
+    host_base_limits:
+      - domain: "*"
+        type: soft
+        item: nofile
+        value: "65536"
+  roles:
+    - role: host_base

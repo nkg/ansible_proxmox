@@ -1,0 +1,23 @@
+# Ansible Galaxy install / build artifacts
+.ansible/
+*.tar.gz
+/collections/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Ansible runtime
+*.retry
+.ansible-lint-cache/
+
+# Molecule ephemeral state
+.molecule/
+
+# Local agent / editor / OS
+.claude/
+.DS_Store
+*.swp
