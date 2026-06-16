@@ -1,7 +1,7 @@
 # Ansible Collection — nkg.proxmox
 
-[![Lint](https://github.com/nkg/proxmox/actions/workflows/lint.yml/badge.svg)](https://github.com/nkg/proxmox/actions/workflows/lint.yml)
-[![Molecule](https://github.com/nkg/proxmox/actions/workflows/molecule.yml/badge.svg)](https://github.com/nkg/proxmox/actions/workflows/molecule.yml)
+[![Lint](https://github.com/nkg/ansible_proxmox/actions/workflows/lint.yml/badge.svg)](https://github.com/nkg/ansible_proxmox/actions/workflows/lint.yml)
+[![Molecule](https://github.com/nkg/ansible_proxmox/actions/workflows/molecule.yml/badge.svg)](https://github.com/nkg/ansible_proxmox/actions/workflows/molecule.yml)
 
 Ansible roles to provision, configure, secure and harden [Proxmox VE](https://www.proxmox.com/)
 servers — from a bare-metal Hetzner install through hardening and intrusion
@@ -37,7 +37,7 @@ Each role has its own README with the full variable reference.
 ## Install
 
 ```bash
-ansible-galaxy collection install git+https://github.com/nkg/proxmox.git
+ansible-galaxy collection install git+https://github.com/nkg/ansible_proxmox.git
 ```
 
 ## Quick start

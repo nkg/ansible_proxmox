@@ -144,7 +144,7 @@
          | selectattr('groupid', 'equalto', api_access_user ~ '-group')
          | first | default({}) }}
     api_access_group_members: >-
-      {{ (api_access_group_record.users | default('')).split(',') | reject('equalto', '') | list }}
+      {{ (api_access_group_record.users | default('')).split(',') | map('trim') | reject('equalto', '') | list }}
   when: (api_access_user ~ '@pam') not in api_access_group_members
   changed_when: true
 

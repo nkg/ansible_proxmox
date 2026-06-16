@@ -30,10 +30,10 @@ dependencies:
   community.general: ">=8.0.0"
   ansible.utils: ">=2.10.0"
 
-repository: https://github.com/nkg/proxmox
-documentation: https://github.com/nkg/proxmox/blob/main/README.md
-homepage: https://github.com/nkg/proxmox
-issues: https://github.com/nkg/proxmox/issues
+repository: https://github.com/nkg/ansible_proxmox
+documentation: https://github.com/nkg/ansible_proxmox/blob/main/README.md
+homepage: https://github.com/nkg/ansible_proxmox
+issues: https://github.com/nkg/ansible_proxmox/issues
 
 # Files/dirs excluded from the built collection artifact.
 build_ignore:
