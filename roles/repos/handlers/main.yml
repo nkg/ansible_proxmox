@@ -5,3 +5,11 @@
   ansible.builtin.service:
     name: pveproxy
     state: restarted
+
+# Refresh the apt cache only when a repo actually changed (notified). A
+# standalone update_cache task always reports 'changed'; as a handler it stays
+# idempotent on steady-state re-runs.
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+  when: repos_update_cache | bool

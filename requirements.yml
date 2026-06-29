@@ -10,6 +10,9 @@ collections:
   - name: ansible.posix
   - name: community.general
   - name: ansible.utils
+  # Required by konstruktoid.hardening (the security role); it references
+  # community.crypto modules, which Ansible resolves at parse time.
+  - name: community.crypto
 
 roles:
   # CIS/STIG hardening baseline applied by the nkg.proxmox.security role.

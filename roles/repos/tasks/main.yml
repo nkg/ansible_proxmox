@@ -21,6 +21,7 @@
     - pve-enterprise.sources
     - pve-enterprise.list
   when: not repos_use_enterprise
+  notify: Update apt cache
   tags: [repos, enterprise]
 
 - name: Disable the stock Proxmox Ceph enterprise repository
@@ -31,6 +32,7 @@
     - ceph.sources
     - ceph.list
   when: not repos_ceph_enabled
+  notify: Update apt cache
   tags: [repos, ceph]
 
 - name: Install python3-debian (required by deb822_repository)
@@ -71,6 +73,7 @@
     signed_by: "{{ repos_proxmox_keyring_path }}"
     enabled: "{{ repos_use_enterprise }}"
     state: "{{ 'present' if repos_use_enterprise else 'absent' }}"
+  notify: Update apt cache
   tags: [repos, enterprise]
 
 - name: Configure the Proxmox VE no-subscription repository
@@ -83,6 +86,7 @@
     signed_by: "{{ repos_proxmox_keyring_path }}"
     enabled: "{{ repos_no_subscription }}"
     state: "{{ 'present' if repos_no_subscription else 'absent' }}"
+  notify: Update apt cache
   tags: [repos, no-subscription]
 
 - name: Configure the Ceph no-subscription repository
@@ -95,6 +99,7 @@
     signed_by: "{{ repos_proxmox_keyring_path }}"
     enabled: "{{ repos_ceph_enabled }}"
     state: "{{ 'present' if repos_ceph_enabled else 'absent' }}"
+  notify: Update apt cache
   tags: [repos, ceph]
 
 - name: Remove the web UI subscription nag
@@ -102,8 +107,8 @@
   when: repos_remove_subscription_nag | bool
   tags: [repos, nag]
 
-- name: Update the APT cache
-  ansible.builtin.apt:
-    update_cache: true
-  when: repos_update_cache | bool
+# The apt cache is refreshed by the "Update apt cache" handler, notified above
+# only when a repo actually changed — so steady-state re-runs stay idempotent.
+- name: Flush handlers so the cache refresh happens before the role returns
+  ansible.builtin.meta: flush_handlers
   tags: [repos]

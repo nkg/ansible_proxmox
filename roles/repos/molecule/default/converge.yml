@@ -1,7 +1,8 @@
 ---
 # Exercises the real deb822 path: enable the no-subscription repo (writes a
 # .sources file + installs the Proxmox signing key), keep enterprise/ceph off.
-# repos_update_cache stays off so we don't run apt update against the PVE repo.
+# repos_update_cache is ON so the "Update apt cache" handler is exercised and
+# the idempotence step catches any regression to a per-run apt update.
 - name: Converge
   hosts: all
   become: true
@@ -10,6 +11,6 @@
     repos_no_subscription: true
     repos_ceph_enabled: false
     repos_remove_subscription_nag: true
-    repos_update_cache: false
+    repos_update_cache: true
   roles:
     - role: repos
