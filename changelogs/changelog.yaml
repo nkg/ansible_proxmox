@@ -1,6 +1,23 @@
 ---
 ancestor: null
 releases:
+  1.0.4:
+    release_date: "2026-08-31"
+    changes:
+      bugfixes:
+        - >-
+          api_access — bootstrap no longer replaces an existing admin user's
+          password with a lock. `password: "!"` is right for a NEW account
+          (it authenticates by key and escalates via the NOPASSWD drop-in)
+          but the user module applies it on every run, so a host where the
+          user already existed with a working password had that password
+          locked. The very next task needs become, so the run then died with
+          "Incorrect sudo password" before reaching the sudoers drop-in that
+          would have made the password unnecessary — leaving the account
+          unable to escalate at all, recoverable only from the host console.
+          Fixed with update_password on_create. This is exactly the case
+          `--tags bootstrap` exists for, and it was observed on two live
+          hosts.
   1.0.3:
     release_date: "2026-08-31"
     changes:

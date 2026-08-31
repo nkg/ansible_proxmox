@@ -19,6 +19,21 @@
     name: "{{ api_access_user }}"
     state: present
 
+# `password: "!"` locks the account password, which is correct for a NEW
+# account: this user authenticates by key and escalates via the NOPASSWD
+# drop-in below, so it should never have a usable password.
+#
+# update_password: on_create is what makes that safe. Without it the module
+# applies `password` on EVERY run, so a host where `iac` already exists with
+# a working password has that password replaced by a lock — and since the
+# very next task needs become, the run dies with "Incorrect sudo password"
+# before reaching the sudoers drop-in that would have made the password
+# unnecessary. The play then leaves the account unable to escalate at all,
+# recoverable only from the host console.
+#
+# That is precisely the situation `--tags bootstrap` exists for: an
+# already-provisioned user that has no NOPASSWD entry yet. Observed on two
+# live hosts, 2026-08-31.
 - name: Create admin user
   ansible.builtin.user:
     name: "{{ api_access_user }}"
@@ -29,6 +44,7 @@
     create_home: true
     state: present
     password: "!"
+    update_password: on_create
 
 - name: Deploy IaC SSH key for admin user
   ansible.posix.authorized_key:
