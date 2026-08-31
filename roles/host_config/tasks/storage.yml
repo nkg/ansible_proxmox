@@ -9,6 +9,9 @@
     cmd: pvesh get /storage/local --output-format json
   register: host_config_storage_status
   changed_when: false
+  # Read-only. Must run under --check too: the task below parses this
+  # register, and a skipped read leaves it with an empty string.
+  check_mode: false
 
 - name: Configure local storage content types
   ansible.builtin.command:

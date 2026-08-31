@@ -33,6 +33,9 @@
     label: "{{ item.key }}"
   register: api_access_pool_status
   changed_when: false
+  # Read-only. Must run under --check too: its register is parsed by a
+  # later task, and a skipped read leaves that parse with an empty string.
+  check_mode: false
   when: api_access_storage_pools | length > 0
 
 - name: Configure storage pool content types
@@ -56,6 +59,9 @@
   ansible.builtin.command: pveum user list --output-format json
   register: api_access_users
   changed_when: false
+  # Read-only. Must run under --check too: its register is parsed by a
+  # later task, and a skipped read leaves that parse with an empty string.
+  check_mode: false
 
 - name: Create Proxmox API user
   ansible.builtin.command: >-
@@ -67,6 +73,9 @@
   ansible.builtin.command: pveum group list --output-format json
   register: api_access_groups
   changed_when: false
+  # Read-only. Must run under --check too: its register is parsed by a
+  # later task, and a skipped read leaves that parse with an empty string.
+  check_mode: false
 
 - name: Create Proxmox group
   ansible.builtin.command: >-
@@ -78,6 +87,9 @@
   ansible.builtin.command: pveum role list --output-format json
   register: api_access_roles
   changed_when: false
+  # Read-only. Must run under --check too: its register is parsed by a
+  # later task, and a skipped read leaves that parse with an empty string.
+  check_mode: false
 
 - name: Create Proxmox role
   ansible.builtin.command: >-
@@ -90,6 +102,9 @@
   ansible.builtin.command: pveum group list --output-format json
   register: api_access_groups_after_create
   changed_when: false
+  # Read-only. Must run under --check too: its register is parsed by a
+  # later task, and a skipped read leaves that parse with an empty string.
+  check_mode: false
 
 # `pveum user list` omits group membership (the /access/users index only
 # returns `groups` with full=1, which the CLI doesn't pass). The group list is
@@ -112,6 +127,9 @@
   ansible.builtin.command: pveum acl list --output-format json
   register: api_access_acls
   changed_when: false
+  # Read-only. Must run under --check too: its register is parsed by a
+  # later task, and a skipped read leaves that parse with an empty string.
+  check_mode: false
 
 - name: Assign group ACL
   ansible.builtin.command: >-
@@ -133,6 +151,9 @@
   ansible.builtin.command: pveum user token list {{ api_access_user }}@pam --output-format json
   register: api_access_tokens
   changed_when: false
+  # Read-only. Must run under --check too: its register is parsed by a
+  # later task, and a skipped read leaves that parse with an empty string.
+  check_mode: false
 
 - name: Generate API token
   ansible.builtin.shell: |
