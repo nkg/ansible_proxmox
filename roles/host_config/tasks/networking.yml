@@ -163,9 +163,15 @@
   register: host_config_vmbr0_check
   changed_when: false
   failed_when: "'state UP' not in host_config_vmbr0_check.stdout"
+  # Read-only, and the point of it is the failed_when. Skipped under --check
+  # the check never runs, so a dry run reports a healthy bridge it never
+  # looked at — a verification that only ever passes.
+  check_mode: false
 
 - name: Verify private bridge exists
   ansible.builtin.command: ip link show {{ host_config_private_bridge_name }}
   register: host_config_vmbr1_check
   changed_when: false
   failed_when: host_config_vmbr1_check.rc != 0
+  # Read-only; same reasoning as the bridge check above.
+  check_mode: false

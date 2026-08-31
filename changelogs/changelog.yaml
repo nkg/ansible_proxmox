@@ -1,6 +1,23 @@
 ---
 ancestor: null
 releases:
+  1.0.3:
+    release_date: "2026-08-31"
+    changes:
+      bugfixes:
+        - >-
+          api_access, host_config — mark the read-only discovery commands
+          check_mode false, so `--check` works at all. Without it those tasks
+          were skipped under --check, later tasks parsed their empty
+          registers, and a dry run failed on a healthy host (from_json on an
+          empty string in api_access; an empty privilege vocabulary in the
+          consuming playbook). A dry run was impossible — which is the run an
+          operator is told to do first.
+        - >-
+          host_config — the vmbr0/vmbr1 bridge verifications now run under
+          --check as well. They are read-only and their whole purpose is the
+          failed_when; skipped, a dry run reported healthy bridges it had
+          never looked at.
   1.0.2:
     release_date: "2026-06-16"
     changes:
