@@ -41,18 +41,33 @@
 
 # konstruktoid disables unprivileged user namespaces (user.max_user_namespaces=0,
 # kernel.unprivileged_userns_clone=0), which breaks unprivileged LXC containers —
-# core Proxmox functionality. Re-assert the Proxmox-required values in a high-
-# priority drop-in that wins over the hardening sysctl file. Runs AFTER the
-# include_role above so it has the final say.
+# core Proxmox functionality. Re-assert the Proxmox-required values in a drop-in
+# that wins AT BOOT, not only now. Runs AFTER the include_role above.
+#
+# The name matters. systemd-sysctl (and `sysctl --system`) applies every
+# drop-in from /etc, /run and /usr/lib in ONE list sorted by basename; a
+# directory only takes precedence for the same filename. konstruktoid writes
+# /usr/lib/sysctl.d/zz-main-hardening.conf, so a 99-* file in /etc sorts
+# BEFORE it and loses on every boot — which is what 1.0.1–1.0.4 shipped: the
+# values held after the play (reload: true applies this file last) and were
+# 0/0 again after the next reboot, and onboot containers failed to start.
+# `zzz-` sorts after any `zz-*` konstruktoid may add.
 - name: Re-assert Proxmox-required sysctls disabled by hardening
   ansible.posix.sysctl:
     name: "{{ item.key }}"
     value: "{{ item.value }}"
-    sysctl_file: /etc/sysctl.d/99-nkg-proxmox-overrides.conf
+    sysctl_file: /etc/sysctl.d/zzz-nkg-proxmox-overrides.conf
     state: present
     reload: true
   loop: "{{ security_sysctl_overrides | dict2items }}"
   when:
     - security_apply_hardening | bool
     - security_sysctl_overrides | length > 0
+  tags: [security, hardening, sysctl]
+
+- name: Remove the pre-1.0.5 override drop-in, which lost to hardening at boot
+  ansible.builtin.file:
+    path: /etc/sysctl.d/99-nkg-proxmox-overrides.conf
+    state: absent
+  when: security_apply_hardening | bool
   tags: [security, hardening, sysctl]

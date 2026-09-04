@@ -62,7 +62,7 @@ argument_specs:
         description: Back up /etc/network/interfaces before rewriting it.
       host_config_sysctl_path:
         type: str
-        default: /etc/sysctl.d/99-proxmox-networking.conf
+        default: /etc/sysctl.d/zzz-proxmox-networking.conf
         description: Path for the proxy_arp / IP-forwarding sysctl drop-in.
       host_config_apt_cache_valid_time:
         type: int

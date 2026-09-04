@@ -137,6 +137,13 @@
       net.ipv4.conf.{{ host_config_bridge_name }}.proxy_arp=1
   notify: Reload sysctl
 
+- name: Remove the pre-1.0.5 networking drop-in, which lost to hardening at boot
+  ansible.builtin.file:
+    path: /etc/sysctl.d/99-proxmox-networking.conf
+    state: absent
+  when: host_config_sysctl_path != '/etc/sysctl.d/99-proxmox-networking.conf'
+  notify: Reload sysctl
+
 - name: Deploy resolv.conf
   ansible.builtin.copy:
     dest: /etc/resolv.conf

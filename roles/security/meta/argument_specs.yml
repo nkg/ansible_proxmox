@@ -46,7 +46,7 @@ argument_specs:
       security_sysctl_overrides:
         type: dict
         description: >-
-          Sysctls re-asserted after hardening via /etc/sysctl.d/99-nkg-proxmox-overrides.conf.
+          Sysctls re-asserted after hardening via /etc/sysctl.d/zzz-nkg-proxmox-overrides.conf.
           Defaults re-enable unprivileged user namespaces (needed for unprivileged LXC).
       security_sshd_password_authentication:
         type: bool
