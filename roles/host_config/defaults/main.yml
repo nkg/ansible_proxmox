@@ -37,7 +37,11 @@ host_config_private_subnet: "10.10.10.0/24"
 host_config_secondary_ip: ""
 host_config_nameservers: []
 host_config_backup_interfaces: true
-host_config_sysctl_path: /etc/sysctl.d/99-proxmox-networking.conf
+# zzz-, not 99-: systemd-sysctl applies every drop-in from /etc and /usr/lib
+# as one basename-sorted list, and the security role's konstruktoid pass
+# writes /usr/lib/sysctl.d/zz-main-hardening.conf with ip_forward=0. A 99-*
+# file loses to that on every boot.
+host_config_sysctl_path: /etc/sysctl.d/zzz-proxmox-networking.conf
 host_config_apt_cache_valid_time: 3600
 
 # --- ACME / Let's Encrypt for the web UI (opt-in, Cloudflare DNS-01) ---

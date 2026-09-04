@@ -29,8 +29,10 @@ security_disable_wireless: false
 security_disable_root_account: false # the Proxmox web GUI needs root PAM login
 security_manage_usbguard: false      # blocks USB by default — breaks console/USB passthrough on a hypervisor
 
-# Sysctls that konstruktoid sets but that Proxmox needs the other way. Applied
-# in a high-priority /etc/sysctl.d/99 drop-in AFTER hardening, so they win.
+# Sysctls that konstruktoid sets but that Proxmox needs the other way. Written
+# to /etc/sysctl.d/zzz-nkg-proxmox-overrides.conf, which sorts after
+# konstruktoid's zz-*-hardening.conf in the single basename-ordered list
+# systemd-sysctl applies at boot — so they win at boot, not only after the play.
 # Re-enables unprivileged user namespaces (required for unprivileged LXC).
 # Add 'net.ipv4.ip_forward: 1' here if this host routes/NATs guest traffic.
 security_sysctl_overrides:

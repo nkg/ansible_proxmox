@@ -1,6 +1,28 @@
 ---
 ancestor: null
 releases:
+  1.0.5:
+    release_date: "2026-09-04"
+    changes:
+      bugfixes:
+        - >-
+          security — the sysctl override drop-in now wins at boot. It was
+          /etc/sysctl.d/99-nkg-proxmox-overrides.conf; konstruktoid writes
+          /usr/lib/sysctl.d/zz-main-hardening.conf, and systemd-sysctl
+          applies every drop-in from /etc and /usr/lib as one list sorted
+          by basename, so 99-* lost to zz-* on every boot. The values held
+          after the play (the task reloads its own file last) and were back
+          to 0/0 after the next reboot, at which point onboot unprivileged
+          containers failed to start — observed on four hosts on 2026-09-04.
+          Now /etc/sysctl.d/zzz-nkg-proxmox-overrides.conf, which sorts
+          after any zz-*; the old file is removed.
+        - >-
+          host_config — same defect in the opt-in networking drop-in:
+          host_config_sysctl_path now defaults to
+          /etc/sysctl.d/zzz-proxmox-networking.conf, so ip_forward=1 and
+          proxy_arp survive a reboot on a host that also ran the security
+          role (konstruktoid sets ip_forward=0 in zz-main-hardening.conf).
+          The old default file is removed when the path is not the old one.
   1.0.4:
     release_date: "2026-08-31"
     changes:
