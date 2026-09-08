@@ -11,7 +11,7 @@ jobs:
     # api_access runs its container-testable 'bootstrap' scenario (the Linux IaC
     # user); its Proxmox-API half, plus security and hetzner_image, need a real
     # Proxmox host / QEMU / konstruktoid and are tested out of band.
-    uses: nkg/github-actions/.github/workflows/molecule.yml@v2
+    uses: nkg/github-actions/.github/workflows/molecule.yml@v3
     with:
       roles: |
         api_access
