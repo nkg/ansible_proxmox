@@ -1,0 +1,8 @@
+# False positives from betterleaks' full-history scan (secret-scan.yml, push mode).
+# Fingerprints are <commit>:<file>:<rule>:<line> and only match these historical
+# commits, so a real secret added later is still caught.
+#
+# roles/api_access/tasks/bootstrap.yml:47 is `update_password: on_create`, an Ansible option.
+fa1440dd820a91164f90269eae37981d04fe1001:roles/api_access/tasks/bootstrap.yml:generic-password:47
+# roles/hetzner_image/README.md:89 is a documented example value.
+3ff17083ec6c14f15f0d8dabd68ec0f32c30b4f4:roles/hetzner_image/README.md:generic-password:89
